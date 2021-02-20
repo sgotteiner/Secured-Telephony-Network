@@ -19,7 +19,6 @@ import javax.swing.Timer;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.net.DatagramPacket;
-import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.util.*;
 
@@ -81,7 +80,6 @@ public class Client2 implements SipListener {
                 dialog.sendRequest(ct);
             } catch (Exception ex) {
                 ex.printStackTrace();
-//                junit.framework.TestCase.fail("Exit JVM");
             }
 
         }
@@ -118,8 +116,7 @@ public class Client2 implements SipListener {
 //            responseToInvite(requestReceivedEvent, serverTransaction);
             iConnectSipToGUI.handleCallInvitation(requestReceivedEvent, serverTransaction);
         } else if (request.getMethod().equals(Request.ACK)) {
-            openRTP(Integer.parseInt(new String((byte[]) request.getContent(),
-                    StandardCharsets.UTF_8).split("m=audio ")[1].split(" ")[0]));
+            openRTP(Utils.extractPortFromSdp(request.getContent()));
         }
     }
 
@@ -173,7 +170,8 @@ public class Client2 implements SipListener {
     }
 
     private void openRTP(int port) {
-        rtpHandler = new RTPHandler("localhost", port, rtpPort, false);
+        rtpHandler = new RTPHandler("127.0.0.1", port, rtpPort, false);
+        System.out.println("sending to server on " + port + " and receiving from server on " + rtpPort);
 
         datagramPacket = new DatagramPacket(buf, buf.length);
         AudioFormat format = new AudioFormat(8000.0f, 16, 1, true, true);
@@ -189,7 +187,10 @@ public class Client2 implements SipListener {
         rtpTimer = new Timer(100, new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                rtpHandler.getReciever().receive(datagramPacket);
+
+                rtpHandler.getSender().send(buf, buf.length); //send nothing just to see that this is working
+
+                rtpHandler.getReceiver().receive(datagramPacket);
 
                 //create an rtp.RTPpacket object from the DP
                 RTPpacket rtpPacket = new RTPpacket(datagramPacket.getData(), datagramPacket.getLength());
@@ -216,6 +217,7 @@ public class Client2 implements SipListener {
     }
 
     public void processBye(RequestEvent requestEvent) {
+        isInConversation = false;
         closeRTP();
         responseToBye(requestEvent);
     }
@@ -224,28 +226,44 @@ public class Client2 implements SipListener {
         try {
             ServerTransaction serverTransaction = requestEvent.getServerTransaction();
             System.out.println("got a bye .");
+            Response response = messageFactory.createResponse(Response.OK, requestEvent.getRequest());
             if (serverTransaction == null) {
                 System.out.println("null TransactionID.");
-                sipProvider.sendResponse(messageFactory.createResponse(Response.OK, requestEvent.getRequest()));
+                sipProvider.sendResponse(response);
                 return;
             }
             Dialog dialog = serverTransaction.getDialog();
             System.out.println("Dialog State = " + dialog.getState());
-            Response response = messageFactory.createResponse(Response.OK, requestEvent.getRequest());
             addContent(response, rtpPort);
             serverTransaction.sendResponse(response);
             System.out.println("Client:  Sending OK.");
             System.out.println("Dialog State = " + dialog.getState());
         } catch (Exception ex) {
             ex.printStackTrace();
-//            junit.framework.TestCase.fail("Exit JVM");
         }
     }
 
     private void closeRTP() {
         rtpTimer.stop();
-        rtpHandler.close();
+        rtpHandler.closeAll();
+        speaker.drain();
         speaker.close();
+    }
+
+    public void sendBye(){
+        if (Proxy.callerSendsBye && !byeTaskRunning) {
+            byeTaskRunning = true;
+            rtpTimer.stop();
+//            rtpHandler.close("", System.currentTimeMillis());
+            Request byeRequest = null;
+            try {
+                byeRequest = dialog.createRequest(Request.BYE);
+            } catch (SipException e) {
+                e.printStackTrace();
+            }
+            addContent(byeRequest, rtpPort);
+//            new java.util.Timer().schedule(new Client2.ByeTask(byeRequest), 4000);
+        }
     }
 
     // Save the created ACK request, to respond to retransmitted 2xx
@@ -270,7 +288,6 @@ public class Client2 implements SipListener {
             }
         } catch (Exception ex) {
             ex.printStackTrace();
-//            junit.framework.TestCase.fail("Exit JVM");
         }
     }
 

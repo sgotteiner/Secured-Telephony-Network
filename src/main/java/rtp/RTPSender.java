@@ -1,5 +1,7 @@
 package rtp;
 
+import utils.Utils;
+
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -18,6 +20,7 @@ public class RTPSender {
 
     public RTPSender(String serverIP, int port){
         try {
+            Utils.printCurrentTime(port, "sender");
             this.socket = new DatagramSocket();
         } catch (SocketException e) {
             e.printStackTrace();
@@ -42,10 +45,11 @@ public class RTPSender {
         try {
             socket.send(new DatagramPacket(packetBits, packetLength, InetAddress.getByName(serverIP), port));
         } catch (IOException e) {
+            System.out.println(e.getMessage() + " on sender port: " + port);
             e.printStackTrace();
         }
 
-//        System.out.println("Send frame #" + seqNumber + ", Frame size: " + audioLength + " (" + audio.length + ")");
+        System.out.println("Send frame #" + seqNumber + ", Frame size: " + audioLength + " (" + audio.length + ")");
 //        //print the header bitstream
 //        rtpPacket.printheader();
 
@@ -53,6 +57,7 @@ public class RTPSender {
     }
 
     public void close(){
+        System.out.println("Sender port: " + port);
         socket.close();
     }
 }

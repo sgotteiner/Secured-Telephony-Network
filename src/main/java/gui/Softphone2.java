@@ -71,7 +71,6 @@ public class Softphone2 {
                 if (isInCall) {
                     btnCallHangupAnswer.setText("Hang up");
                     if (isAnswer) {
-                        btnCallHangupAnswer.setText("Hang up");
                         client.responseToInvite(requestEvent, serverTransaction);
                         isAnswer = false;
                     } else {
@@ -81,6 +80,7 @@ public class Softphone2 {
                     btnCallHangupAnswer.setText("Call");
                     //bye
                 }
+                isInCall = !isInCall;
             }
         });
     }

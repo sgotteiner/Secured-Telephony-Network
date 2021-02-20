@@ -9,10 +9,10 @@ import java.util.Random;
 
 public class Utils {
 
-    public static int getRandomPort(){
+    public static int getRandomPort() {
         Random r = new Random();
-        while(true){
-            int port = r.nextInt(20);
+        while (true) {
+            int port = r.nextInt(50);
             try {
                 new ServerSocket(port + 6000).close();
                 return port + 6000;
@@ -28,5 +28,9 @@ public class Utils {
 
     public static String getSenderIPfromMessage(Message message) {
         return message.getHeader(ContactHeader.NAME).toString().split("@")[1].split(":")[0];
+    }
+
+    public static void printCurrentTime(int port, String where) {
+        System.out.println(port + " opened int " + where + " at: " + System.currentTimeMillis() % 100000);
     }
 }

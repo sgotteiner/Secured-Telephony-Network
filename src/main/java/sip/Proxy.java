@@ -51,7 +51,8 @@ public class Proxy implements SipListener {
 
     private HashMap<String, SipURI> registrar = new HashMap<String, SipURI>();
 
-    private HashMap<String, String> rtpMap = new HashMap<String, String>();
+    private HashMap<String, String> rtpClientServer = new HashMap<String, String>();
+    private HashMap<String, String> rtpClients = new HashMap<String, String>();
     private HashMap<String, String> waitingForAckMap = new HashMap<String, String>();
     private HashMap<String, RTPHandler> rtpHandlers = new HashMap<String, RTPHandler>();
 
@@ -87,16 +88,7 @@ public class Proxy implements SipListener {
                 Response otherResponse = messageFactory.createResponse(response.getStatusCode(), st.getRequest());
                 if (response.getStatusCode() == Response.OK) {
                     if (ct.getRequest().getMethod().equals(Request.INVITE)) {
-                        int rtpPort1 = Utils.extractPortFromSdp(st.getRequest().getContent());
-                        String ip1 = Utils.getSenderIPfromMessage(st.getRequest());
-                        int portServer1 = Utils.extractPortFromSdp(ct.getRequest().getContent());
-                        int rtpPort2 = Utils.extractPortFromSdp(response.getContent());
-                        String ip2 = Utils.getSenderIPfromMessage(response);
-                        int portServer2 = Utils.getRandomPort();
-                        rtpMap.put(myIP + ":" + portServer2, ip2 + ":" + rtpPort2);
-                        rtpHandlers.put(myIP + ":" + portServer2, new RTPHandler(ip2, rtpPort2, portServer2, true));
-                        rtpMap.put(myIP + ":" + portServer1, ip1 + ":" + rtpPort1); //the rtp handler will be created after first client ack
-                        waitingForAckMap.put(ip1 + ":" + rtpPort1, myIP + ":" + portServer2); //rtpPort1 will be got in ack and then an rtp handler will be created
+                        int portServer1 = managePortsAfterInviteOK(st, ct, response);
 
                         Address address = addressFactory.createAddress("Server <sip:" + myIP + ":" + mySipPort + ">");
                         ContactHeader contactHeader = headerFactory.createContactHeader(address);
@@ -105,14 +97,14 @@ public class Proxy implements SipListener {
                         if (toHeader.getTag() == null)
                             toHeader.setTag(((ToHeader) response.getHeader(ToHeader.NAME)).getTag());
                         otherResponse.addHeader(contactHeader);
-                        addContent(otherResponse, portServer2);
+                        addContent(otherResponse, portServer1);
                     } else if (ct.getRequest().getMethod().equals(Request.BYE)) {
                         int rtpPort = Utils.extractPortFromSdp(response.getContent());
-                        rtpHandlers.get(rtpPort).close();
-                        rtpHandlers.remove(rtpPort);
-                        rtpMap.remove(rtpPort);
-                        System.out.println(rtpMap.size());
-                        System.exit(0);
+                        String address = myIP + ":" + rtpPort;
+                        rtpHandlers.get(address).closeAll(); //stop receiving from client1 and sending to client2
+                        rtpHandlers.remove(rtpClientServer.get(address));
+                        rtpClientServer.remove(address);
+                        System.out.println(rtpClientServer.size());
                     }
                 }
                 st.sendResponse(otherResponse);
@@ -122,23 +114,52 @@ public class Proxy implements SipListener {
         }
     }
 
+    private int managePortsAfterInviteOK(ServerTransaction st, ClientTransaction ct, Response response) {
+        int rtpPort1 = Utils.extractPortFromSdp(st.getRequest().getContent());
+        String ip1 = Utils.getSenderIPfromMessage(st.getRequest());
+        int portServer1 = Utils.extractPortFromSdp(ct.getRequest().getContent());
+        int rtpPort2 = Utils.extractPortFromSdp(response.getContent());
+        String ip2 = Utils.getSenderIPfromMessage(response);
+        int portServer2 = Utils.getRandomPort();
+        rtpClients.put(ip1 + ":" + rtpPort1, ip2 + ":" + rtpPort2);
+        rtpClientServer.put(ip2 + ":" + rtpPort2, myIP + ":" + portServer2);
+        waitingForAckMap.put(ip1 + ":" + rtpPort2, myIP + ":" + portServer1); //rtpPort2 will be got in ack and then an rtp handler will be created
+        rtpClientServer.put(ip1 + ":" + rtpPort1, myIP + ":" + portServer1); //the rtp handler will be created after client1 ack
+        waitingForAckMap.put(ip1 + ":" + rtpPort1, myIP + ":" + portServer2); //rtpPort1 will be got in ack and then an rtp handler will be created
+
+        System.out.println("client1 sends rtp to server to " + portServer1 + " and the server sends to " + rtpPort1 + " in client1, the handler will be created in ack");
+        System.out.println("client2 sends rtp to server to " + portServer2 + " and the server sends to " + rtpPort2 + " in client2");
+        System.out.println("after ack of client1 handler that receives at " + portServer2 + " from client2 and sends to " + rtpPort1 + " at client1");
+        System.out.println("after ack of client1 handler that receives at " + portServer1 + " from client1 and sends to " + rtpPort2 + " at client2");
+
+        return portServer1;
+    }
+
     /**
      * Process the ACK request, forward it to the other leg.
      */
     private void processAck(RequestEvent requestEvent) {
         try {
-            int rtpPort = Utils.extractPortFromSdp(requestEvent.getRequest().getContent());
-            String serverPort = waitingForAckMap.get(myIP + ":" + rtpPort);
-            String sendIP = rtpMap.get(serverPort);
-            rtpHandlers.put(serverPort, new RTPHandler(sendIP.split(":")[0],
-                    Integer.valueOf(sendIP.split(":")[1]), Integer.valueOf(serverPort.split(":")[1]), true));
-            waitingForAckMap.remove(rtpPort);
+            int rtpPort1 = Utils.extractPortFromSdp(requestEvent.getRequest().getContent());
+            String serverPort1 = waitingForAckMap.get(myIP + ":" + rtpPort1);
+            String sendIP = rtpClientServer.get(serverPort1);
+            rtpHandlers.put(myIP + ":" + rtpPort1, new RTPHandler(myIP,
+                    rtpPort1, Integer.parseInt(serverPort1.split(":")[1]), true));
+            waitingForAckMap.remove(myIP + ":" + rtpPort1);
+            String address2 = rtpClients.get(myIP + ":" + rtpPort1);
+            int rtpPort2 = Integer.parseInt(address2.split(":")[1]);
+            String serverPort2 = waitingForAckMap.get(address2);
+            rtpHandlers.put(address2, new RTPHandler(myIP,
+                    rtpPort2, Integer.parseInt(serverPort2.split(":")[1]), true));
+            waitingForAckMap.remove(myIP + ":" + rtpPort2);
             Dialog dialog = requestEvent.getServerTransaction().getDialog();
             System.out.println("server: got an ACK! ");
+            System.out.println("handler receives at " + serverPort1 + " from client2 and sends to " + rtpPort1 + " at client1");
+            System.out.println("handler receives at " + serverPort2 + " from client1 and sends to " + rtpPort2 + " at client2");
             System.out.println("Dialog State = " + dialog.getState());
             Dialog otherDialog = (Dialog) dialog.getApplicationData();
             Request request = otherDialog.createAck(otherDialog.getLocalSeqNumber());
-            addContent(request, Integer.valueOf(serverPort.split(":")[1]));
+            addContent(request, Integer.parseInt(serverPort1.split(":")[1]));
             otherDialog.sendAck(request);
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -151,6 +172,7 @@ public class Proxy implements SipListener {
             Dialog dialog = serverTransaction.getDialog();
             Dialog otherDialog = (Dialog) dialog.getApplicationData();
             Request request = otherDialog.createRequest(Request.BYE); //!= requestEvent.getRequest()
+            addContent(request, Utils.extractPortFromSdp(requestEvent.getRequest().getContent()));
             //the client transaction for requestEvent.getRequest() already exists so it will fail.
             ClientTransaction clientTransaction = sipProvider.getNewClientTransaction(request);
             clientTransaction.setApplicationData(serverTransaction);
@@ -158,10 +180,10 @@ public class Proxy implements SipListener {
             serverTransaction.getDialog().setApplicationData(clientTransaction.getDialog());
             clientTransaction.getDialog().setApplicationData(dialog);
             otherDialog.sendRequest(clientTransaction);
-            int rtpPort = Utils.extractPortFromSdp(request.getContent());
-            rtpHandlers.get(rtpPort).close();
-            rtpHandlers.remove(rtpPort);
-            rtpMap.remove(rtpPort);
+            int rtpPort = Utils.extractPortFromSdp(requestEvent.getRequest().getContent());
+            String address = "127.0.0.1" + ":" + rtpPort;
+            rtpHandlers.get(address).closeAll(); //stop receiving from client2 and sending to client1
+            rtpHandlers.remove(address);
         } catch (Exception e) {
             printException(e);
         }

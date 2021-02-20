@@ -75,9 +75,7 @@ public class Client1 implements SipListener {
                 createClientTransaction(byeRequest);
             } catch (Exception ex) {
                 ex.printStackTrace();
-//                junit.framework.TestCase.fail("Exit JVM");
             }
-
         }
     }
 
@@ -87,7 +85,6 @@ public class Client1 implements SipListener {
 
     private static void usage() {
         System.out.println(usageString);
-//        junit.framework.TestCase.fail("Exit JVM");
     }
 
     public void processRequest(RequestEvent requestReceivedEvent) {
@@ -173,13 +170,18 @@ public class Client1 implements SipListener {
 
         if (response.getStatusCode() == Response.OK) {
             if (cseq.getMethod().equals(Request.INVITE)) {
-                sendACK(response, clientTransaction);
                 openRTP(response);
-                prepareToBye();
+                sendACK(response, clientTransaction);
+//                prepareToBye();
             } else if (cseq.getMethod().equals(Request.CANCEL)) {
                 handleCancel();
             } else if (cseq.getMethod().equals(Request.REGISTER)) {
 //                prepareToCall();
+            }
+            else if (cseq.getMethod().equals(Request.BYE)){
+                rtpTimer.stop();
+                rtpHandler.getSender().close();
+                audio.closeMic();
             }
         }
     }
@@ -209,6 +211,8 @@ public class Client1 implements SipListener {
 
     private void openRTP(Response response) {
         rtpHandler = new RTPHandler(server.split(":")[0], Utils.extractPortFromSdp(response.getContent()), rtpPort, false);
+        System.out.println("sending to server on " + Utils.extractPortFromSdp(response.getContent()) + " and receiving from server on " + rtpPort);
+
         try {
             audio = new AudioStream();
         } catch (Exception e) {
@@ -236,18 +240,32 @@ public class Client1 implements SipListener {
         String byeNow = scanner.nextLine();
         if (byeNow.equals("y"))
             if (Proxy.callerSendsBye && !byeTaskRunning) {
-                rtpTimer.stop();
-                rtpHandler.close();
                 byeTaskRunning = true;
+                rtpTimer.stop();
+                rtpHandler.getReceiver().close();
                 Request byeRequest = null;
                 try {
                     byeRequest = dialog.createRequest(Request.BYE);
                 } catch (SipException e) {
                     e.printStackTrace();
                 }
-                addContent(byeRequest, rtpPort);
                 new Timer().schedule(new ByeTask(byeRequest), 4000);
             }
+    }
+
+    public void sendBye(){
+        if (Proxy.callerSendsBye && !byeTaskRunning) {
+            byeTaskRunning = true;
+            rtpHandler.getReceiver().close();
+            Request byeRequest = null;
+            try {
+                byeRequest = dialog.createRequest(Request.BYE);
+                addContent(byeRequest, rtpPort);
+            } catch (SipException e) {
+                e.printStackTrace();
+            }
+            new Timer().schedule(new ByeTask(byeRequest), 4000);
+        }
     }
 
     private void handleCancel() {
@@ -261,7 +279,6 @@ public class Client1 implements SipListener {
             } catch (SipException e) {
                 e.printStackTrace();
             }
-
         }
     }
 
@@ -489,7 +506,6 @@ public class Client1 implements SipListener {
     private void printException(Exception e) {
         e.printStackTrace();
         System.err.println(e.getMessage());
-//        junit.framework.TestCase.fail("Exit JVM");
     }
 
     public static void main(String args[]) {
@@ -500,7 +516,6 @@ public class Client1 implements SipListener {
         System.out.println("IOException happened for "
                 + exceptionEvent.getHost() + " port = "
                 + exceptionEvent.getPort());
-
     }
 
     public void processTransactionTerminated(TransactionTerminatedEvent transactionTerminatedEvent) {

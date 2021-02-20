@@ -79,6 +79,7 @@ public class Softphone1 {
                     }
                     else {
                         btnCallHangupAnswer.setText("Call");
+                        client.sendBye();
                         //bye
                     }
                 }

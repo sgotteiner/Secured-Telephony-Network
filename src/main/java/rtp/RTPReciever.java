@@ -1,5 +1,7 @@
 package rtp;
 
+import utils.Utils;
+
 import javax.sound.sampled.*;
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -9,26 +11,33 @@ import java.net.SocketException;
 public class RTPReciever {
 
     private DatagramSocket socket;
+    private int port;
 
-    public RTPReciever(int port){
+    public RTPReciever(int port) {
+
+        this.port = port;
 
         try {
+            Utils.printCurrentTime(port, "receiver");
             socket = new DatagramSocket(port);
-            socket.setSoTimeout(500);
+            socket.setSoTimeout(200);
         } catch (SocketException e) {
             e.printStackTrace();
         }
     }
 
-    public void receive(DatagramPacket datagramPacket){
+    public void receive(DatagramPacket datagramPacket) {
         try {
-            socket.receive(datagramPacket);
+            if (!socket.isClosed())
+                socket.receive(datagramPacket);
         } catch (IOException e) {
+            System.out.println(e.getMessage() + " on receiver port: " + port);
             e.printStackTrace();
         }
     }
 
-    public void close(){
+    public void close() {
         socket.close();
+        System.out.println("Receiver port: " + port);
     }
 }

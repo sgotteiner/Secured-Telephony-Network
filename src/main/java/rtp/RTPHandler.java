@@ -8,21 +8,24 @@ import java.net.DatagramPacket;
 public class RTPHandler {
 
     private RTPSender sender;
-    private RTPReciever reciever;
+    private RTPReciever receiver;
     private Timer timer;
     private boolean isServer;
 
-    public RTPHandler(String ip, int sendPort, int recievePort, boolean isServer) {
+    public RTPHandler(String ip, int sendPort, int receivePort, boolean isServer) {
+
+        System.out.println("handler created: receives at " + receivePort + ", sends to " + sendPort);
         this.sender = new RTPSender(ip, sendPort);
-        this.reciever = new RTPReciever(recievePort);
+        this.receiver = new RTPReciever(receivePort);
         this.isServer = isServer;
 
         if (isServer) {
+            byte[] buf = new byte[1024];
+            DatagramPacket datagramPacket = new DatagramPacket(buf, buf.length);
             timer = new Timer(100, new ActionListener() {
                 @Override
                 public void actionPerformed(ActionEvent e) {
-                    byte[] buf = new byte[1024];
-                    reciever.receive(new DatagramPacket(buf, buf.length));
+                    receiver.receive(datagramPacket);
                     sender.send(buf, buf.length);
                 }
             });
@@ -31,17 +34,19 @@ public class RTPHandler {
     }
 
     public RTPSender getSender() {
+        if(isServer)
+            timer.stop();
         return sender;
     }
 
-    public RTPReciever getReciever() {
-        return reciever;
+    public RTPReciever getReceiver() {
+        return receiver;
     }
 
-    public void close() {
+    public void closeAll() {
         if (isServer)
             timer.stop();
         sender.close();
-        reciever.close();
+        receiver.close();
     }
 }
