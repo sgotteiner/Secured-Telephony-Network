@@ -20,7 +20,7 @@ public class RTPSender {
 
     public RTPSender(String serverIP, int port){
         try {
-            Utils.printCurrentTime(port, "sender");
+            Utils.printCurrentTime(port, "open", "sender");
             this.socket = new DatagramSocket();
         } catch (SocketException e) {
             e.printStackTrace();
@@ -58,6 +58,7 @@ public class RTPSender {
 
     public void close(){
         System.out.println("Sender port: " + port);
+        Utils.printCurrentTime(port, "closed", "sender");
         socket.close();
     }
 }

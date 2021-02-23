@@ -56,7 +56,7 @@ public class Softphone2 {
             @Override
             public void actionPerformed(ActionEvent e) {
                 isRegistered = true;
-                client.init(txtMyIP.getText(), Integer.valueOf(txtMyPort.getText()),
+                client.init(txtMyIP.getText(), Integer.parseInt(txtMyPort.getText()),
                         txtServerIP.getText() + ":" + txtServerPort.getText(), iConnectSipToGUI);
                 client.register();
             }

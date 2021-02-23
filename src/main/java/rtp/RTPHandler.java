@@ -34,7 +34,7 @@ public class RTPHandler {
     }
 
     public RTPSender getSender() {
-        if(isServer)
+        if (isServer)
             timer.stop();
         return sender;
     }
@@ -48,5 +48,6 @@ public class RTPHandler {
             timer.stop();
         sender.close();
         receiver.close();
+
     }
 }

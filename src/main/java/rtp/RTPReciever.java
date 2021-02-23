@@ -18,7 +18,7 @@ public class RTPReciever {
         this.port = port;
 
         try {
-            Utils.printCurrentTime(port, "receiver");
+            Utils.printCurrentTime(port, "open","receiver");
             socket = new DatagramSocket(port);
             socket.setSoTimeout(200);
         } catch (SocketException e) {
@@ -39,5 +39,10 @@ public class RTPReciever {
     public void close() {
         socket.close();
         System.out.println("Receiver port: " + port);
+        Utils.printCurrentTime(port, "close", "receiver");
+    }
+
+    public boolean isClosed() {
+        return socket.isClosed();
     }
 }

@@ -27,10 +27,9 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class Proxy implements SipListener {
 
+    private static SipFactory sipFactory;
     private static AddressFactory addressFactory;
-
     private static MessageFactory messageFactory;
-
     private static HeaderFactory headerFactory;
 
     private static SipStack sipStack;
@@ -39,23 +38,24 @@ public class Proxy implements SipListener {
 
     private static final int mySipPort = 5080;
 
-    private AtomicLong counter = new AtomicLong();
+    private final AtomicLong counter = new AtomicLong();
 
     private ListeningPoint listeningPoint;
 
     private SipProvider sipProvider;
 
-    private String transport = "udp";
+    private final String transport = "udp";
 
     public static final boolean callerSendsBye = true;
 
-    private HashMap<String, SipURI> registrar = new HashMap<String, SipURI>();
+    private final HashMap<String, SipURI> registrar = new HashMap<String, SipURI>();
 
-    private HashMap<String, String> rtpClientServer = new HashMap<String, String>();
-    private HashMap<String, String> rtpClients = new HashMap<String, String>();
-    private HashMap<String, String> waitingForAckMap = new HashMap<String, String>();
-    private HashMap<String, RTPHandler> rtpHandlers = new HashMap<String, RTPHandler>();
+    private final HashMap<String, String> rtpClientServer = new HashMap<String, String>();
+    private final HashMap<String, String> rtpClients = new HashMap<String, String>();
+    private final HashMap<String, String> waitingForAckMap = new HashMap<String, String>();
+    private final HashMap<String, RTPHandler> rtpHandlers = new HashMap<String, RTPHandler>();
 
+    //process and forward the request to the relevant clients
     public void processRequest(RequestEvent requestEvent) {
         Request request = requestEvent.getRequest();
 
@@ -63,17 +63,14 @@ public class Proxy implements SipListener {
             processInvite(requestEvent);
         } else if (request.getMethod().equals(Request.ACK)) {
             processAck(requestEvent);
-        } else if (request.getMethod().equals(Request.CANCEL)) {
-            processCancel(requestEvent);
         } else if (request.getMethod().equals(Request.REGISTER)) {
             processRegister(requestEvent);
         } else if (request.getMethod().equals(Request.BYE)) {
             processBye(requestEvent);
-        } else {
-            //processInDialogRequest(requestEvent);
         }
     }
 
+    //process and forward the responses to the relevant clients
     public void processResponse(ResponseEvent responseEvent) {
         ClientTransaction ct = responseEvent.getClientTransaction();
         if (ct == null) {
@@ -88,8 +85,12 @@ public class Proxy implements SipListener {
                 Response otherResponse = messageFactory.createResponse(response.getStatusCode(), st.getRequest());
                 if (response.getStatusCode() == Response.OK) {
                     if (ct.getRequest().getMethod().equals(Request.INVITE)) {
+
+                        //connect the rtp ports of the current conversation
+                        //the handlers will be created in ack
                         int portServer1 = managePortsAfterInviteOK(st, ct, response);
 
+                        //forward the ok to the inviting client
                         Address address = addressFactory.createAddress("Server <sip:" + myIP + ":" + mySipPort + ">");
                         ContactHeader contactHeader = headerFactory.createContactHeader(address);
                         response.addHeader(contactHeader);
@@ -97,11 +98,13 @@ public class Proxy implements SipListener {
                         if (toHeader.getTag() == null)
                             toHeader.setTag(((ToHeader) response.getHeader(ToHeader.NAME)).getTag());
                         otherResponse.addHeader(contactHeader);
-                        addContent(otherResponse, portServer1);
+                        Utils.addContent(headerFactory, otherResponse, portServer1);
                     } else if (ct.getRequest().getMethod().equals(Request.BYE)) {
+
+                        //stop receiving from client1 and sending to client2
                         int rtpPort = Utils.extractPortFromSdp(response.getContent());
                         String address = myIP + ":" + rtpPort;
-                        rtpHandlers.get(address).closeAll(); //stop receiving from client1 and sending to client2
+                        rtpHandlers.get(address).closeAll();
                         rtpHandlers.remove(rtpClientServer.get(address));
                         rtpClientServer.remove(address);
                         System.out.println(rtpClientServer.size());
@@ -114,6 +117,7 @@ public class Proxy implements SipListener {
         }
     }
 
+    //start the rtp port connection process and print explanations
     private int managePortsAfterInviteOK(ServerTransaction st, ClientTransaction ct, Response response) {
         int rtpPort1 = Utils.extractPortFromSdp(st.getRequest().getContent());
         String ip1 = Utils.getSenderIPfromMessage(st.getRequest());
@@ -135,44 +139,53 @@ public class Proxy implements SipListener {
         return portServer1;
     }
 
-    /**
-     * Process the ACK request, forward it to the other leg.
-     */
+    //Process the ACK request and forward it to the other leg.
     private void processAck(RequestEvent requestEvent) {
         try {
-            int rtpPort1 = Utils.extractPortFromSdp(requestEvent.getRequest().getContent());
-            String serverPort1 = waitingForAckMap.get(myIP + ":" + rtpPort1);
-            String sendIP = rtpClientServer.get(serverPort1);
-            rtpHandlers.put(myIP + ":" + rtpPort1, new RTPHandler(myIP,
-                    rtpPort1, Integer.parseInt(serverPort1.split(":")[1]), true));
-            waitingForAckMap.remove(myIP + ":" + rtpPort1);
-            String address2 = rtpClients.get(myIP + ":" + rtpPort1);
-            int rtpPort2 = Integer.parseInt(address2.split(":")[1]);
-            String serverPort2 = waitingForAckMap.get(address2);
-            rtpHandlers.put(address2, new RTPHandler(myIP,
-                    rtpPort2, Integer.parseInt(serverPort2.split(":")[1]), true));
-            waitingForAckMap.remove(myIP + ":" + rtpPort2);
-            Dialog dialog = requestEvent.getServerTransaction().getDialog();
             System.out.println("server: got an ACK! ");
-            System.out.println("handler receives at " + serverPort1 + " from client2 and sends to " + rtpPort1 + " at client1");
-            System.out.println("handler receives at " + serverPort2 + " from client1 and sends to " + rtpPort2 + " at client2");
-            System.out.println("Dialog State = " + dialog.getState());
-            Dialog otherDialog = (Dialog) dialog.getApplicationData();
+
+            String serverPort1 = createHandlers(requestEvent.getRequest().getContent());
+
+            Dialog otherDialog = (Dialog) requestEvent.getServerTransaction().getDialog().getApplicationData();
             Request request = otherDialog.createAck(otherDialog.getLocalSeqNumber());
-            addContent(request, Integer.parseInt(serverPort1.split(":")[1]));
+            Utils.addContent(headerFactory, request, Integer.parseInt(serverPort1.split(":")[1]));
             otherDialog.sendAck(request);
         } catch (Exception ex) {
             ex.printStackTrace();
         }
     }
 
+    //the handlers contain the rtp sender and receiver
+    private String createHandlers(Object sdp) {
+        int rtpPort1 = Utils.extractPortFromSdp(sdp);
+        String serverPort1 = waitingForAckMap.get(myIP + ":" + rtpPort1);
+        //this handler contains the receiver to client2 and sender to client1
+        rtpHandlers.put(myIP + ":" + rtpPort1, new RTPHandler(myIP,
+                rtpPort1, Integer.parseInt(serverPort1.split(":")[1]), true));
+        waitingForAckMap.remove(myIP + ":" + rtpPort1);
+
+        String address2 = rtpClients.get(myIP + ":" + rtpPort1);
+        int rtpPort2 = Integer.parseInt(address2.split(":")[1]);
+        String serverPort2 = waitingForAckMap.get(address2);
+        //this handler contains the receiver to client1 and sender to client2
+        rtpHandlers.put(address2, new RTPHandler(myIP,
+                rtpPort2, Integer.parseInt(serverPort2.split(":")[1]), true));
+        waitingForAckMap.remove(myIP + ":" + rtpPort2);
+
+        System.out.println("handler receives at " + serverPort1 + " from client2 and sends to " + rtpPort1 + " at client1");
+        System.out.println("handler receives at " + serverPort2 + " from client1 and sends to " + rtpPort2 + " at client2");
+
+        return serverPort1;
+    }
+
+    //process and forward the bye request
     private void processBye(RequestEvent requestEvent) {
         try {
-            ServerTransaction serverTransaction = (ServerTransaction) requestEvent.getServerTransaction();
+            ServerTransaction serverTransaction = requestEvent.getServerTransaction();
             Dialog dialog = serverTransaction.getDialog();
             Dialog otherDialog = (Dialog) dialog.getApplicationData();
             Request request = otherDialog.createRequest(Request.BYE); //!= requestEvent.getRequest()
-            addContent(request, Utils.extractPortFromSdp(requestEvent.getRequest().getContent()));
+
             //the client transaction for requestEvent.getRequest() already exists so it will fail.
             ClientTransaction clientTransaction = sipProvider.getNewClientTransaction(request);
             clientTransaction.setApplicationData(serverTransaction);
@@ -180,83 +193,99 @@ public class Proxy implements SipListener {
             serverTransaction.getDialog().setApplicationData(clientTransaction.getDialog());
             clientTransaction.getDialog().setApplicationData(dialog);
             otherDialog.sendRequest(clientTransaction);
+
+            //stop receiving from client2 and sending to client1
             int rtpPort = Utils.extractPortFromSdp(requestEvent.getRequest().getContent());
-            String address = "127.0.0.1" + ":" + rtpPort;
-            rtpHandlers.get(address).closeAll(); //stop receiving from client2 and sending to client1
+            String address = myIP + ":" + rtpPort;
+            rtpHandlers.get(address).closeAll();
             rtpHandlers.remove(address);
         } catch (Exception e) {
             printException(e);
         }
     }
 
-    /**
-     * Process the invite request.
-     */
+    //check if this client can make this invitation in db and forward it
     private void processInvite(RequestEvent requestEvent) {
         SipProvider sipProvider = (SipProvider) requestEvent.getSource();
+        ServerTransaction st = requestEvent.getServerTransaction();
         Request request = requestEvent.getRequest();
+        if (st == null) {
+            try {
+                st = sipProvider.getNewServerTransaction(request);
+            } catch (TransactionAlreadyExistsException | TransactionUnavailableException e) {
+                e.printStackTrace();
+            }
+        }
+
+        //if not an exception is thrown
+        SipURI toUri = checkIfRegistered(st, request);
+
         String ip = Utils.getSenderIPfromMessage(request);
-        ToHeader to = (ToHeader) request.getHeader(ToHeader.NAME);
-        SipURI toUri = registrar.get(((To) to).getDisplayName());
+        //do this client have the permission to make this call
         boolean isCall = PermissionDB.getInstance().isIPgoodForCall(ip, toUri.getHost());
         if (isCall) {
-            try {
-                System.out.println("server: got an Invite sending Trying");
-                ServerTransaction st = requestEvent.getServerTransaction();
-                if (st == null) {
-                    st = sipProvider.getNewServerTransaction(request);
-                }
-                Dialog dialog = st.getDialog();
-
-                if (toUri == null) {
-                    System.out.println("User " + toUri + " is not registered.");
-                    throw new RuntimeException("User not registered " + toUri);
-                } else {
-                    String displayName = ((To) request.getHeader(ToHeader.NAME)).getDisplayName();
-                    Address toNameAddress = addressFactory.createAddress(toUri);
-                    toNameAddress.setDisplayName(displayName);
-                    ToHeader toHeader = headerFactory.createToHeader(toNameAddress, null);
-                    request.removeHeader(ToHeader.NAME);
-                    request.setHeader(toHeader);
-                    ClientTransaction otherLeg = call(request);
-                    otherLeg.setApplicationData(st);
-                    st.setApplicationData(otherLeg);
-                    dialog.setApplicationData(otherLeg.getDialog());
-                    otherLeg.getDialog().setApplicationData(dialog);
-                }
-            } catch (Exception ex) {
-                ex.printStackTrace();
-            }
+            forwardCall(st, request, toUri);
         }
     }
 
-    /**
-     * Process the any in dialog request - MESSAGE, BYE, INFO, UPDATE.
-     */
-    private void processInDialogRequest(RequestEvent requestEvent) {
-        SipProvider sipProvider = (SipProvider) requestEvent.getSource();
-        Request request = requestEvent.getRequest();
-        ServerTransaction serverTransactionId = requestEvent.getServerTransaction();
-        Dialog dialog = requestEvent.getDialog();
-        System.out.println("local party = " + dialog.getLocalParty());
+    //the check uses the registrar HashMap
+    private SipURI checkIfRegistered(ServerTransaction st, Request request) {
+
+        //unregistered users can't call and be called
+        ToHeader to = (ToHeader) request.getHeader(ToHeader.NAME);
+        FromHeader from = (FromHeader) request.getHeader(FromHeader.NAME);
+        SipURI fromUri = registrar.get(from.getAddress().getDisplayName());
+        SipURI toUri = registrar.get(((To) to).getDisplayName());
+        if (toUri == null || fromUri == null) {
+            try {
+                st.sendResponse(messageFactory.createResponse(Response.UNAUTHORIZED, request));
+            } catch (SipException | InvalidArgumentException | ParseException e) {
+                e.printStackTrace();
+            }
+            System.out.println("User is not registered.");
+            throw new RuntimeException("User not registered");
+        }
+        return toUri;
+    }
+
+    //only after permission check
+    private void forwardCall(ServerTransaction st, Request request, SipURI toUri) {
+        System.out.println("server: got an Invite sending Trying");
+
+        Dialog dialog = st.getDialog();
+
         try {
-            System.out.println("Server:  got a bye sending OK.");
-            Response response = messageFactory.createResponse(200, request);
-            serverTransactionId.sendResponse(response);
-            System.out.println("Dialog State is " + serverTransactionId.getDialog().getState());
-
-            Dialog otherLeg = (Dialog) dialog.getApplicationData();
-            Request otherBye = otherLeg.createRequest(request.getMethod());
-            ClientTransaction clientTransaction = sipProvider.getNewClientTransaction(otherBye);
-            clientTransaction.setApplicationData(serverTransactionId);
-            serverTransactionId.setApplicationData(clientTransaction);
-            otherLeg.sendRequest(clientTransaction);
-
+            String displayName = ((To) request.getHeader(ToHeader.NAME)).getDisplayName();
+            Address toNameAddress = addressFactory.createAddress(toUri);
+            toNameAddress.setDisplayName(displayName);
+            ToHeader toHeader = headerFactory.createToHeader(toNameAddress, null);
+            request.removeHeader(ToHeader.NAME);
+            request.setHeader(toHeader);
+            ClientTransaction otherLeg = call(request);
+            otherLeg.setApplicationData(st);
+            st.setApplicationData(otherLeg);
+            dialog.setApplicationData(otherLeg.getDialog());
+            otherLeg.getDialog().setApplicationData(dialog);
         } catch (Exception ex) {
             ex.printStackTrace();
         }
     }
 
+    //create the client transaction for the call, returns it and sends the request
+    private ClientTransaction call(Request request) {
+        try {
+            request = createRequest(request, Utils.getRandomPort());
+            ClientTransaction clientTransaction = sipProvider.getNewClientTransaction(request);
+            clientTransaction.sendRequest();
+            return clientTransaction;
+        } catch (Exception ex) {
+            System.out.println(ex.getMessage());
+            ex.printStackTrace();
+        }
+        return null;
+    }
+
+    //register a user to the system if his ip has a permission
     private void processRegister(RequestEvent requestEvent) {
         Request request = requestEvent.getRequest();
         String ip = Utils.getSenderIPfromMessage(request);
@@ -269,16 +298,13 @@ public class Proxy implements SipListener {
             SipURI fromUri = (SipURI) from.getAddress().getURI();
             registrar.put(((From) from).getDisplayName(), contactUri);
             try {
-                Response response = this.messageFactory.createResponse(Response.OK, request);
+                Response response = messageFactory.createResponse(Response.OK, request);
                 ServerTransaction serverTransaction = sipProvider.getNewServerTransaction(request);
                 serverTransaction.sendResponse(response);
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }
-    }
-
-    private void processCancel(RequestEvent requestEvent) {
     }
 
     public void processTimeout(TimeoutEvent timeoutEvent) {
@@ -295,63 +321,59 @@ public class Proxy implements SipListener {
         System.out.println("Transaction Time out");
     }
 
+    //initial the sip factories and stack
     private void init() {
 
-        ConsoleAppender console = new ConsoleAppender(); //create appender
-        //configure the appender
-        String PATTERN = "%d [%p|%c|%C{1}] %m%n";
-        console.setLayout(new PatternLayout(PATTERN));
-        console.setThreshold(Level.DEBUG);
-        console.activateOptions();
-        //add appender to any Logger (here is root)
-        Logger.getRootLogger().addAppender(console);
-        SipFactory sipFactory = SipFactory.getInstance();
-        sipFactory.setPathName("gov.nist");
-        Properties properties = new Properties();
-        properties.setProperty("javax.sip.STACK_NAME", "Server");
-        // You need 16 for logging traces. 32 for debug + traces.
-        // Your code will limp at 32 but it is best for debugging.
-//        properties.setProperty("gov.nist.javax.sip.TRACE_LEVEL", "LOG4J");
-//        properties.setProperty("gov.nist.javax.sip.DEBUG_LOG",
-//                "shootmedebug.txt");
-//        properties.setProperty("gov.nist.javax.sip.SERVER_LOG",
-//                "shootmelog.txt");
-//        properties.setProperty("gov.nist.javax.sip.MESSAGE_PROCESSOR_FACTORY", NioMessageProcessorFactory.class.getName());
+        initFactories();
 
+        initStack();
+
+        initSipProvider();
+    }
+
+    private void initSipProvider() {
         try {
-            // Create SipStack object
-            sipStack = sipFactory.createSipStack(properties);
-            System.out.println("sipStack = " + sipStack);
-        } catch (PeerUnavailableException e) {
-            // could not find
-            // gov.nist.jain.protocol.ip.sip.SipStackImpl
-            // in the classpath
+            this.listeningPoint = sipStack.createListeningPoint(myIP, mySipPort, transport);
+            sipProvider = sipStack.createSipProvider(listeningPoint);
+            sipProvider.addSipListener(this);
+        } catch (Exception e) {
             e.printStackTrace();
-            System.err.println(e.getMessage());
-            if (e.getCause() != null)
-                e.getCause().printStackTrace();
-//            junit.framework.TestCase.fail("Exit JVM");
         }
+    }
+
+    //in order to create sip objects
+    private void initFactories() {
+        sipFactory = SipFactory.getInstance();
+        sipFactory.setPathName("gov.nist");
 
         try {
             headerFactory = sipFactory.createHeaderFactory();
             addressFactory = sipFactory.createAddressFactory();
             messageFactory = sipFactory.createMessageFactory();
-            this.listeningPoint = sipStack.createListeningPoint(myIP, mySipPort, transport);
-
-            Proxy listener = this;
-
-            sipProvider = sipStack.createSipProvider(listeningPoint);
-            System.out.println("udp provider " + sipProvider);
-            sipProvider.addSipListener(listener);
-
         } catch (Exception ex) {
             System.out.println(ex.getMessage());
             ex.printStackTrace();
         }
     }
 
-    public static void main(String args[]) {
+    //the sip stack has the listening points and providers that are used in all the dialogs
+    private void initStack() {
+        Properties properties = new Properties();
+        properties.setProperty("javax.sip.STACK_NAME", "Server");
+
+        try {
+            // Create SipStack object
+            sipStack = sipFactory.createSipStack(properties);
+        } catch (PeerUnavailableException e) {
+            e.printStackTrace();
+            System.err.println(e.getMessage());
+            if (e.getCause() != null)
+                e.getCause().printStackTrace();
+        }
+    }
+
+    //start the pbx
+    public static void main(String[] args) {
         new Proxy().init();
     }
 
@@ -372,21 +394,8 @@ public class Proxy implements SipListener {
         System.out.println("Local Party = " + d.getLocalParty());
     }
 
-    private ClientTransaction call(Request request) {
-        try {
-            request = createRequest(request, Utils.getRandomPort());
-            ClientTransaction clientTransaction = sipProvider.getNewClientTransaction(request);
-            clientTransaction.sendRequest();
-            return clientTransaction;
-        } catch (Exception ex) {
-            System.out.println(ex.getMessage());
-            ex.printStackTrace();
-        }
-        return null;
-    }
-
     String fromName = "Server";
-
+    //create the request to forward from the received request
     private Request createRequest(Request request, int port) {
         //Request request = null;
         try {
@@ -425,32 +434,11 @@ public class Proxy implements SipListener {
             ContactHeader contactHeader = headerFactory.createContactHeader(contactAddress);
             request.addHeader(contactHeader);
 
-            addContent(request, port);
+            Utils.addContent(headerFactory, request, port);
         } catch (Exception e) {
             printException(e);
         }
         return request;
-    }
-
-    private void addContent(Message message, int port) {
-        ContentTypeHeader contentTypeHeader = null;
-        try {
-            contentTypeHeader = headerFactory.createContentTypeHeader("application", "sdp");
-
-            String sdpData = "v=0\r\n"
-                    + "o=4855 13760799956958020 13760799956958020"
-                    + " IN IP4 127.0.0.1\r\n" + "s=mysession session\r\n"
-                    + "p=+46 8 52018010\r\n" + "c=IN IP4 127.0.0.1\r\n"
-                    + "t=0 0\r\n" + "m=audio " + port + " RTP/AVP 0 4 18\r\n"
-                    + "a=rtpmap:0 PCMU/8000\r\n" + "a=rtpmap:4 G723/8000\r\n"
-                    + "a=rtpmap:18 G729A/8000\r\n" + "a=ptime:20\r\n";
-
-            byte[] contents = sdpData.getBytes();
-
-            message.setContent(contents, contentTypeHeader);
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
     }
 
     private void printException(Exception e) {

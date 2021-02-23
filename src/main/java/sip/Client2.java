@@ -85,16 +85,6 @@ public class Client2 implements SipListener {
         }
     }
 
-    private static final String usageString = "java "
-            + "examples.shootist.Shootist \n"
-            + ">>>> is your class path set to the root?";
-
-    private static void usage() {
-        System.out.println(usageString);
-//        junit.framework.TestCase.fail("Exit JVM");
-
-    }
-
     public void processRequest(RequestEvent requestReceivedEvent) {
         Request request = requestReceivedEvent.getRequest();
         ServerTransaction serverTransaction = requestReceivedEvent.getServerTransaction();
@@ -159,7 +149,7 @@ public class Client2 implements SipListener {
                     response.addHeader(contactHeader);
                 }
 
-                addContent(response, rtpPort);
+                Utils.addContent(headerFactory, response, rtpPort);
 
                 serverTransaction.sendResponse(response);
                 isInConversation = true;
@@ -234,7 +224,7 @@ public class Client2 implements SipListener {
             }
             Dialog dialog = serverTransaction.getDialog();
             System.out.println("Dialog State = " + dialog.getState());
-            addContent(response, rtpPort);
+            Utils.addContent(headerFactory, response, rtpPort);
             serverTransaction.sendResponse(response);
             System.out.println("Client:  Sending OK.");
             System.out.println("Dialog State = " + dialog.getState());
@@ -261,7 +251,7 @@ public class Client2 implements SipListener {
             } catch (SipException e) {
                 e.printStackTrace();
             }
-            addContent(byeRequest, rtpPort);
+            Utils.addContent(headerFactory, byeRequest, rtpPort);
 //            new java.util.Timer().schedule(new Client2.ByeTask(byeRequest), 4000);
         }
     }
@@ -304,7 +294,7 @@ public class Client2 implements SipListener {
         System.out.println("Sending ACK for dialog:" + dialog.getDialogId());
         try {
             ackRequest = dialog.createAck(((CSeqHeader) response.getHeader(CSeqHeader.NAME)).getSeqNumber());
-            addContent(ackRequest, rtpPort);
+            Utils.addContent(headerFactory, ackRequest, rtpPort);
             dialog.sendAck(ackRequest);
         } catch (InvalidArgumentException e) {
             e.printStackTrace();
@@ -522,7 +512,7 @@ public class Client2 implements SipListener {
 //                    "my header value");
 //            request.addHeader(extensionHeader);
 
-            addContent(request, rtpPort);
+            Utils.addContent(headerFactory, request, rtpPort);
 
             Header callInfoHeader = headerFactory.createHeader("Call-Info", "<http://www.antd.nist.gov>");
             request.addHeader(callInfoHeader);
@@ -531,27 +521,6 @@ public class Client2 implements SipListener {
         }
 
         return request;
-    }
-
-    private void addContent(Message message, int port) {
-        ContentTypeHeader contentTypeHeader = null;
-        try {
-            contentTypeHeader = headerFactory.createContentTypeHeader("application", "sdp");
-
-            String sdpData = "v=0\r\n"
-                    + "o=4855 13760799956958020 13760799956958020"
-                    + " IN IP4 127.0.0.1\r\n" + "s=mysession session\r\n"
-                    + "p=+46 8 52018010\r\n" + "c=IN IP4 127.0.0.1\r\n"
-                    + "t=0 0\r\n" + "m=audio " + port + " RTP/AVP 0 4 18\r\n"
-                    + "a=rtpmap:0 PCMU/8000\r\n" + "a=rtpmap:4 G723/8000\r\n"
-                    + "a=rtpmap:18 G729A/8000\r\n" + "a=ptime:20\r\n";
-
-            byte[] contents = sdpData.getBytes();
-
-            message.setContent(contents, contentTypeHeader);
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
     }
 
     private void printException(Exception e) {

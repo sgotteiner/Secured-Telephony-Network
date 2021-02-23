@@ -54,11 +54,11 @@ public class Softphone1 {
             @Override
             public void actionPerformed(ActionEvent e) {
                 isRegistered = true;
-                client.init(txtMyIP.getText(), Integer.valueOf(txtMyPort.getText()),
-                        txtServerIP.getText() + ":" + txtServerPort.getText(), iConnectSipToGUI);
+//                client.init(txtMyIP.getText(), Integer.valueOf(txtMyPort.getText()),
+//                        txtServerIP.getText() + ":" + txtServerPort.getText(), iConnectSipToGUI);
                 client.register(txtUsername.getText(), txtDisplayName.getText(), txtDomainName.getText(),
-                        "Server", null, txtServerIP.getText(),
-                        txtServerIP.getText() + ":" + txtServerPort.getText());
+                        txtMyIP.getText(), Integer.parseInt(txtMyPort.getText()),
+                        txtServerIP.getText() + ":" + txtServerPort.getText(), iConnectSipToGUI);
             }
         });
         btnCallHangupAnswer.addActionListener(new ActionListener() {

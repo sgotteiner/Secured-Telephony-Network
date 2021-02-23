@@ -45,7 +45,7 @@ public class Client1 implements SipListener {
 
     private ListeningPoint udpListeningPoint;
 
-    private ClientTransaction inviteTid;
+    private ClientTransaction transaction;
 
     private Dialog dialog;
 
@@ -55,6 +55,7 @@ public class Client1 implements SipListener {
     private String transport = "udp";
     private String myIP;
     private int mySipPort;
+    private ClientDetails clientDetails;
     private String server = "127.0.0.1:5080";
 
     private int rtpPort;
@@ -78,14 +79,7 @@ public class Client1 implements SipListener {
             }
         }
     }
-
-    private static final String usageString = "java "
-            + "examples.myFullNetwork.sip.Client1 \n"
-            + ">>>> is your class path set to the root?";
-
-    private static void usage() {
-        System.out.println(usageString);
-    }
+    private Timer byeTimer;
 
     public void processRequest(RequestEvent requestReceivedEvent) {
         Request request = requestReceivedEvent.getRequest();
@@ -129,7 +123,7 @@ public class Client1 implements SipListener {
                 response.addHeader(contactHeader);
             }
 
-            addContent(response, rtpPort);
+            Utils.addContent(headerFactory, response, rtpPort);
 
             serverTransaction.sendResponse(response);
             isInConversation = true;
@@ -158,9 +152,6 @@ public class Client1 implements SipListener {
         }
     }
 
-    // Save the created ACK request, to respond to retransmitted 2xx
-    private Request ackRequest;
-
     public void processResponse(ResponseEvent responseReceivedEvent) {
         Response response = (Response) responseReceivedEvent.getResponse();
         ClientTransaction clientTransaction = responseReceivedEvent.getClientTransaction();
@@ -169,19 +160,27 @@ public class Client1 implements SipListener {
         printResponse(response, cseq);
 
         if (response.getStatusCode() == Response.OK) {
-            if (cseq.getMethod().equals(Request.INVITE)) {
-                openRTP(response);
-                sendACK(response, clientTransaction);
+            switch (cseq.getMethod()) {
+                case Request.INVITE:
+                    //other client wants to talk
+                    openRTP(response);
+                    //the right sip flow
+                    sendACK(response, clientTransaction);
 //                prepareToBye();
-            } else if (cseq.getMethod().equals(Request.CANCEL)) {
-                handleCancel();
-            } else if (cseq.getMethod().equals(Request.REGISTER)) {
+                    break;
+                case Request.REGISTER:
 //                prepareToCall();
-            }
-            else if (cseq.getMethod().equals(Request.BYE)){
-                rtpTimer.stop();
-                rtpHandler.getSender().close();
-                audio.closeMic();
+                    break;
+                case Request.BYE:
+                    //stop sending bye
+                    byeTimer.cancel();
+                    byeTaskRunning = false;
+
+                    //stop sending audio from microphone
+                    rtpTimer.stop();
+                    rtpHandler.getSender().close();
+                    audio.closeMic();
+                    break;
             }
         }
     }
@@ -193,17 +192,16 @@ public class Client1 implements SipListener {
                 response.getHeader(CallIdHeader.NAME));
     }
 
+    //acknowledge the callee's ok
     private void sendACK(Response response, ClientTransaction clientTransaction) {
         System.out.println("Dialog after 200 OK  " + dialog);
         System.out.println("Dialog State after 200 OK  " + dialog.getState());
         System.out.println("Sending ACK for dialog:" + dialog.getDialogId());
         try {
-            ackRequest = dialog.createAck(((CSeqHeader) response.getHeader(CSeqHeader.NAME)).getSeqNumber());
-            addContent(ackRequest, rtpPort);
+            Request ackRequest = dialog.createAck(((CSeqHeader) response.getHeader(CSeqHeader.NAME)).getSeqNumber());
+            Utils.addContent(headerFactory, ackRequest, rtpPort);
             dialog.sendAck(ackRequest);
-        } catch (InvalidArgumentException e) {
-            e.printStackTrace();
-        } catch (SipException e) {
+        } catch (InvalidArgumentException | SipException e) {
             e.printStackTrace();
         }
         System.out.println("transaction state is " + clientTransaction.getState());
@@ -253,32 +251,20 @@ public class Client1 implements SipListener {
             }
     }
 
+    //end a call
     public void sendBye(){
-        if (Proxy.callerSendsBye && !byeTaskRunning) {
+        if (!byeTaskRunning) {
             byeTaskRunning = true;
             rtpHandler.getReceiver().close();
             Request byeRequest = null;
             try {
                 byeRequest = dialog.createRequest(Request.BYE);
-                addContent(byeRequest, rtpPort);
+                Utils.addContent(headerFactory, byeRequest, rtpPort);
             } catch (SipException e) {
                 e.printStackTrace();
             }
-            new Timer().schedule(new ByeTask(byeRequest), 4000);
-        }
-    }
-
-    private void handleCancel() {
-        if (dialog.getState() == DialogState.CONFIRMED) {
-            // oops cancel went in too late. Need to hang up the
-            System.out.println("Sending BYE -- cancel went in too late !!");
-            try {
-                Request byeRequest = dialog.createRequest(Request.BYE);
-                ClientTransaction ct = sipProvider.getNewClientTransaction(byeRequest);
-                dialog.sendRequest(ct);
-            } catch (SipException e) {
-                e.printStackTrace();
-            }
+            byeTimer = new Timer();
+            byeTimer.schedule(new ByeTask(byeRequest), 4000);
         }
     }
 
@@ -290,10 +276,9 @@ public class Client1 implements SipListener {
             invite("Client2NameDisplay");
     }
 
+    //start a call
     public void invite(String callee) {
-        Request request = createRequset(Request.INVITE, "Client1Name",
-                "Client1NameDisplay", "port5060.com",
-                "user", callee, "domain", "127.0.0.1:5080");
+        Request request = createRequset(Request.INVITE, "user", callee, "domain", "127.0.0.1:5080");
         createClientTransaction(request);
     }
 
@@ -301,19 +286,8 @@ public class Client1 implements SipListener {
         System.out.println("Transaction Time out");
     }
 
-    public void sendCancel() {
-        try {
-            System.out.println("Sending cancel");
-            Request cancelRequest = inviteTid.createCancel();
-            ClientTransaction cancelTid = sipProvider.getNewClientTransaction(cancelRequest);
-            cancelTid.sendRequest();
-        } catch (Exception ex) {
-            ex.printStackTrace();
-        }
-    }
-
+    //connects the client class to the GUI and creates the sip tools
     public void init(String myIP, int mySipPort, String serverAddress, IConnectSipToGUI iConnectSipToGUI) {
-
         this.myIP = myIP;
         this.mySipPort = mySipPort;
         this.rtpPort = Utils.getRandomPort();
@@ -331,17 +305,21 @@ public class Client1 implements SipListener {
     }
 
     private void initSipProvider() {
+        //ha the listening point
         try {
             udpListeningPoint = sipStack.createListeningPoint(myIP, mySipPort, transport);
             System.out.println("listeningPoint = " + udpListeningPoint);
             sipProvider = sipStack.createSipProvider(udpListeningPoint);
             System.out.println("SipProvider = " + sipProvider);
+
+            //implementing sip methods like processRequest
             sipProvider.addSipListener(this);
         } catch (Exception e) {
             printException(e);
         }
     }
 
+    //the sip stack has the listening points and providers that are used in all the dialogs
     private void initStack(String serverAddress) {
         Properties properties = new Properties();
         properties.setProperty("javax.sip.OUTBOUND_PROXY", serverAddress + "/"
@@ -349,42 +327,31 @@ public class Client1 implements SipListener {
         // If you want to use UDP then uncomment this.
         properties.setProperty("javax.sip.STACK_NAME", "client");
 
-        // The following properties are specific to nist-sip
-        // and are not necessarily part of any other jain-sip
-        // implementation.
-        // You can set a max message size for tcp transport to
-        // guard against denial of service attack.
-        properties.setProperty("gov.nist.javax.sip.DEBUG_LOG",
-                "shootistdebug.txt");
-        properties.setProperty("gov.nist.javax.sip.SERVER_LOG",
-                "shootistlog.txt");
-
         // Drop the client connection after we are done with the transaction.
         properties.setProperty("gov.nist.javax.sip.CACHE_CLIENT_CONNECTIONS",
                 "false");
-        // Set to 0 (or NONE) in your production code for max speed.
-        // You need 16 (or TRACE) for logging traces. 32 (or DEBUG) for debug + traces.
-        // Your code will limp at 32 but it is best for debugging.
-        properties.setProperty("gov.nist.javax.sip.TRACE_LEVEL", "DEBUG");
 
         try {
-            // Create SipStack object
             sipStack = sipFactory.createSipStack(properties);
             System.out.println("createSipStack " + sipStack);
         } catch (PeerUnavailableException e) {
-            // could not find
-            // gov.nist.jain.protocol.ip.sip.SipStackImpl
-            // in the classpath
             printException(e);
         }
     }
 
+    //in order to create sip objects
     private void initFactories() {
+        //used to create new stack objects and other factories
         sipFactory = SipFactory.getInstance();
         sipFactory.setPathName("gov.nist");
         try {
+            //used to create new headers objects
             headerFactory = sipFactory.createHeaderFactory();
+
+            //used to create new URI's
             addressFactory = sipFactory.createAddressFactory();
+
+            //used to create new requests and responses
             messageFactory = sipFactory.createMessageFactory();
         } catch (Exception e) {
             printException(e);
@@ -392,43 +359,44 @@ public class Client1 implements SipListener {
     }
 
     public void register(String fromUsername, String fromDisplay, String fromDomain,
-                         String toUsername, String toDisplay, String toDomain, String serverAddress) {
-        Request request = createRequset(Request.REGISTER, fromUsername, fromDisplay,
-                fromDomain, toUsername, toDisplay, toDomain, serverAddress);
+                         String myIP, int myPort, String serverAddress, IConnectSipToGUI iConnectSipToGUI) {
+        init(myIP, myPort, serverAddress, iConnectSipToGUI);
+        //can't call and receive calls before registering
+        clientDetails = new ClientDetails(fromUsername, fromDisplay,
+                fromDomain, myIP, myPort, serverAddress);
+        Request request = createRequset(Request.REGISTER, "Server", null, "port80.com", serverAddress);
         createClientTransaction(request);
     }
 
+    //the client sends requests in a clientTransaction and the server in a serverTransaction
     private void createClientTransaction(Request request) {
         try {
-            // Create the client transaction.
-            inviteTid = sipProvider.getNewClientTransaction(request);
-            System.out.println("inviteTid = " + inviteTid);
+            ClientTransaction clientTransaction = sipProvider.getNewClientTransaction(request);
 
-            // send the request out.
+            // send the request out
             if (dialog != null)
-                dialog.sendRequest(inviteTid);
-            else inviteTid.sendRequest();
+                dialog.sendRequest(clientTransaction);
+            else clientTransaction.sendRequest();
             System.out.println();
             System.out.println("Sending Request:" + request.getMethod());
             System.out.println(request.getHeader(FromHeader.NAME) + "" + request.getHeader(ToHeader.NAME));
 
-            dialog = inviteTid.getDialog();
+            dialog = clientTransaction.getDialog();
         } catch (Exception e) {
             printException(e);
         }
     }
 
-    private Request createRequset(
-            String method, String fromUsername, String fromDisplay, String fromDomain,
-            String toUsername, String toDisplay, String toDomain, String serverAddress) {
+    //creates all the relevant headers
+    private Request createRequset(String method, String toUsername, String toDisplay, String toDomain, String serverAddress) {
 
         Request request = null;
 
         try {
             // create >From Header
-            SipURI fromAddress = addressFactory.createSipURI(fromUsername, fromDomain);
+            SipURI fromAddress = addressFactory.createSipURI(clientDetails.getUsername(), clientDetails.getDomainName());
             Address fromNameAddress = addressFactory.createAddress(fromAddress);
-            fromNameAddress.setDisplayName(fromDisplay);
+            fromNameAddress.setDisplayName(clientDetails.getDisplayName());
             FromHeader fromHeader = headerFactory.createFromHeader(fromNameAddress, "12345");
 
             // create To Header
@@ -460,47 +428,23 @@ public class Client1 implements SipListener {
             request = messageFactory.createRequest(requestURI, method, callIdHeader, cSeqHeader, fromHeader, toHeader, viaHeaders, maxForwardsHeader);
 
             // Create the contact name address.
-            SipURI contactURI = addressFactory.createSipURI(fromUsername, udpListeningPoint.getIPAddress());
+            SipURI contactURI = addressFactory.createSipURI(clientDetails.getUsername(), udpListeningPoint.getIPAddress());
             contactURI.setPort(udpListeningPoint.getPort());
 
             Address contactAddress = addressFactory.createAddress(contactURI);
 
             // Add the contact address.
-            contactAddress.setDisplayName(fromDisplay);
+            contactAddress.setDisplayName(clientDetails.getDisplayName());
 
             contactHeader = headerFactory.createContactHeader(contactAddress);
             request.addHeader(contactHeader);
 
-            addContent(request, rtpPort);
-
-            Header callInfoHeader = headerFactory.createHeader("Call-Info", "<http://www.antd.nist.gov>");
-            request.addHeader(callInfoHeader);
+            Utils.addContent(headerFactory, request, rtpPort);
         } catch (Exception e) {
             printException(e);
         }
 
         return request;
-    }
-
-    public void addContent(Message message, int port) {
-        ContentTypeHeader contentTypeHeader = null;
-        try {
-            contentTypeHeader = headerFactory.createContentTypeHeader("application", "sdp");
-
-            String sdpData = "v=0\r\n"
-                    + "o=4855 13760799956958020 13760799956958020"
-                    + " IN IP4 127.0.0.1\r\n" + "s=mysession session\r\n"
-                    + "p=+46 8 52018010\r\n" + "c=IN IP4 127.0.0.1\r\n"
-                    + "t=0 0\r\n" + "m=audio " + port + " RTP/AVP 0 4 18\r\n"
-                    + "a=rtpmap:0 PCMU/8000\r\n" + "a=rtpmap:4 G723/8000\r\n"
-                    + "a=rtpmap:18 G729A/8000\r\n" + "a=ptime:20\r\n";
-
-            byte[] contents = sdpData.getBytes();
-
-            message.setContent(contents, contentTypeHeader);
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
     }
 
     private void printException(Exception e) {
