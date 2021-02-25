@@ -4,6 +4,7 @@ import javax.sip.header.ContactHeader;
 import javax.sip.header.ContentTypeHeader;
 import javax.sip.header.HeaderFactory;
 import javax.sip.message.Message;
+import javax.sip.message.Request;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
@@ -61,5 +62,9 @@ public class Utils {
     //sort of a debugging tool that helps me know when ports were opened or closed
     public static void printCurrentTime(int port, String operation, String where) {
         System.out.println(port + " " + operation + " in " + where + " at: " + System.currentTimeMillis() % 100000);
+    }
+
+    public static String getAddress(Request request) {
+        return getSenderIPfromMessage(request) + ":" + extractPortFromSdp(request.getContent());
     }
 }

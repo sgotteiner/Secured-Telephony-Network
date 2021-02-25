@@ -1,6 +1,6 @@
 package gui;
 
-import sip.Client1;
+import sip.Client;
 
 import javax.sip.RequestEvent;
 import javax.sip.ServerTransaction;
@@ -29,7 +29,7 @@ public class Softphone1 {
     private RequestEvent requestEvent;
     private ServerTransaction serverTransaction;
 
-    public Softphone1(Client1 client) {
+    public Softphone1(Client client) {
 
         txtCallByName.setText("Client2NameDisplay");
         txtUsername.setText("Client1Name");
@@ -54,8 +54,6 @@ public class Softphone1 {
             @Override
             public void actionPerformed(ActionEvent e) {
                 isRegistered = true;
-//                client.init(txtMyIP.getText(), Integer.valueOf(txtMyPort.getText()),
-//                        txtServerIP.getText() + ":" + txtServerPort.getText(), iConnectSipToGUI);
                 client.register(txtUsername.getText(), txtDisplayName.getText(), txtDomainName.getText(),
                         txtMyIP.getText(), Integer.parseInt(txtMyPort.getText()),
                         txtServerIP.getText() + ":" + txtServerPort.getText(), iConnectSipToGUI);
@@ -93,14 +91,8 @@ public class Softphone1 {
 
     public static void main(String[] args) {
 
-//        System.out.println("Are you sip.Client1?");
-//        String s = new Scanner(System.in).nextLine();
-//        if(s.equals("y"))
-//            isClient1 = true;
-//        else isClient1 = false;
-
         JFrame frame = new JFrame("Softphone 1");
-        frame.setContentPane(new Softphone1(new Client1()).getPanel());
+        frame.setContentPane(new Softphone1(new Client(true, false)).getPanel());
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.pack();
         frame.setVisible(true);

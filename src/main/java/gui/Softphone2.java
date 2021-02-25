@@ -1,6 +1,6 @@
 package gui;
 
-import sip.Client2;
+import sip.Client;
 
 import javax.sip.RequestEvent;
 import javax.sip.ServerTransaction;
@@ -9,8 +9,6 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 
 public class Softphone2 {
-
-    private static boolean isClient1;
 
     private JPanel panel;
     private JTextField txtCallByName;
@@ -31,7 +29,7 @@ public class Softphone2 {
     private RequestEvent requestEvent;
     private ServerTransaction serverTransaction;
 
-    public Softphone2(Client2 client) {
+    public Softphone2(Client client) {
 
         txtCallByName.setText("Client1NameDisplay");
         txtUsername.setText("Client2Name");
@@ -56,9 +54,9 @@ public class Softphone2 {
             @Override
             public void actionPerformed(ActionEvent e) {
                 isRegistered = true;
-                client.init(txtMyIP.getText(), Integer.parseInt(txtMyPort.getText()),
+                client.register(txtUsername.getText(), txtDisplayName.getText(), txtDomainName.getText(),
+                        txtMyIP.getText(), Integer.parseInt(txtMyPort.getText()),
                         txtServerIP.getText() + ":" + txtServerPort.getText(), iConnectSipToGUI);
-                client.register();
             }
         });
         btnCallHangupAnswer.addActionListener(new ActionListener() {
@@ -74,7 +72,7 @@ public class Softphone2 {
                         client.responseToInvite(requestEvent, serverTransaction);
                         isAnswer = false;
                     } else {
-                        client.invite();
+                        client.invite("");
                     }
                 } else {
                     btnCallHangupAnswer.setText("Call");
@@ -91,14 +89,8 @@ public class Softphone2 {
 
     public static void main(String[] args) {
 
-//        System.out.println("Are you sip.Client1?");
-//        String s = new Scanner(System.in).nextLine();
-//        if(s.equals("y"))
-//            isClient1 = true;
-//        else isClient1 = false;
-
         JFrame frame = new JFrame("Softphone 2");
-        frame.setContentPane(new Softphone2(new Client2()).getPanel());
+        frame.setContentPane(new Softphone2(new Client(false, true)).getPanel());
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.pack();
         frame.setVisible(true);
