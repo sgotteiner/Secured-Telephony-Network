@@ -48,6 +48,12 @@ public class Softphone1 {
                 Softphone1.this.requestEvent = requestEvent;
                 Softphone1.this.serverTransaction = serverTransaction;
             }
+
+            @Override
+            public void handleBye() {
+                btnCallHangupAnswer.setText("Call");
+                isInCall = false;
+            }
         };
 
         btnRegister.addActionListener(new ActionListener() {
@@ -62,24 +68,21 @@ public class Softphone1 {
         btnCallHangupAnswer.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                if(!isRegistered)
+                if (!isRegistered)
                     return;
 
                 isInCall = !isInCall;
+
                 if (isInCall) {
                     btnCallHangupAnswer.setText("Hang up");
-                    client.invite(txtCallByName.getText());
-                }
-                else {
-                    if(isAnswer){
-                        btnCallHangupAnswer.setText("Hang up");
+                    if (isAnswer) {
                         client.responseToInvite(requestEvent, serverTransaction);
+                        isAnswer = false;
+                    } else {
+                        client.invite(txtCallByName.getText());
                     }
-                    else {
-                        btnCallHangupAnswer.setText("Call");
-                        client.sendBye();
-                        //bye
-                    }
+                } else {
+                    client.sendBye();
                 }
             }
         });
@@ -92,7 +95,7 @@ public class Softphone1 {
     public static void main(String[] args) {
 
         JFrame frame = new JFrame("Softphone 1");
-        frame.setContentPane(new Softphone1(new Client(true, false)).getPanel());
+        frame.setContentPane(new Softphone1(new Client()).getPanel());
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.pack();
         frame.setVisible(true);

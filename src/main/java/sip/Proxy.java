@@ -107,7 +107,7 @@ public class Proxy implements SipListener {
                         int rtpPort = Utils.extractPortFromSdp(response.getContent());
                         String address = myIP + ":" + rtpPort;
                         rtpHandlers.get(address).closeAll();
-                        rtpHandlers.remove(rtpClientServer.get(address));
+                        rtpHandlers.remove(address);
                         rtpClientServer.remove(address);
                         System.out.println(rtpClientServer.size());
                     }
@@ -194,6 +194,8 @@ public class Proxy implements SipListener {
             String address = myIP + ":" + rtpPort;
             rtpHandlers.get(address).closeAll();
             rtpHandlers.remove(address);
+            rtpClientServer.remove(address);
+            rtpClients.remove(address);
         } catch (Exception e) {
             printException(e);
         }

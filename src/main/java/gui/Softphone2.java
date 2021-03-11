@@ -48,6 +48,12 @@ public class Softphone2 {
                 Softphone2.this.requestEvent = requestEvent;
                 Softphone2.this.serverTransaction = serverTransaction;
             }
+
+            @Override
+            public void handleBye() {
+                btnCallHangupAnswer.setText("Call");
+                isInCall = false;
+            }
         };
 
         btnRegister.addActionListener(new ActionListener() {
@@ -72,13 +78,11 @@ public class Softphone2 {
                         client.responseToInvite(requestEvent, serverTransaction);
                         isAnswer = false;
                     } else {
-                        client.invite("");
+                        client.invite(txtCallByName.getText());
                     }
                 } else {
-                    btnCallHangupAnswer.setText("Call");
-                    //bye
+                    client.sendBye();
                 }
-                isInCall = !isInCall;
             }
         });
     }
@@ -90,7 +94,7 @@ public class Softphone2 {
     public static void main(String[] args) {
 
         JFrame frame = new JFrame("Softphone 2");
-        frame.setContentPane(new Softphone2(new Client(false, true)).getPanel());
+        frame.setContentPane(new Softphone2(new Client()).getPanel());
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.pack();
         frame.setVisible(true);

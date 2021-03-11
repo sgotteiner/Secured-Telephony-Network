@@ -3,7 +3,6 @@ package sip;
 import audio.AudioStream;
 import gui.IConnectSipToGUI;
 import rtp.RTPHandler;
-import rtp.RTPSender;
 import rtp.RTPpacket;
 import utils.Utils;
 
@@ -19,7 +18,6 @@ import javax.sound.sampled.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.net.DatagramPacket;
-import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Properties;
 import java.util.Timer;
@@ -83,9 +81,7 @@ public class Client implements SipListener {
 
     private boolean isSender, isReceiver;
 
-    public Client(boolean isSender, boolean isReceiver) {
-        this.isSender = isSender;
-        this.isReceiver = isReceiver;
+    public Client() {
     }
 
     public void processRequest(RequestEvent requestReceivedEvent) {
@@ -108,6 +104,9 @@ public class Client implements SipListener {
         else if (request.getMethod().equals(Request.INVITE)) {
             iConnectSipToGUI.handleCallInvitation(requestReceivedEvent, serverTransaction);
         } else if (request.getMethod().equals(Request.ACK)) {
+            //in order to avoid duplicate sending and receiving the caller is the sender and callee is a receiver
+            isSender = false;
+            isReceiver = true;
             openRTPWhenCalled();
         }
     }
@@ -173,6 +172,9 @@ public class Client implements SipListener {
             Utils.addContent(headerFactory, response, rtpPort);
 
             serverTransaction.sendResponse(response);
+
+            dialog = serverTransaction.getDialog();
+
             isInConversation = true;
         } catch (Exception e) {
             printException(e);
@@ -180,7 +182,6 @@ public class Client implements SipListener {
     }
 
     public void processBye(RequestEvent requestEvent) {
-        isInConversation = false;
         closeRTP();
         responseToBye(requestEvent);
     }
@@ -189,8 +190,13 @@ public class Client implements SipListener {
         rtpReceiverTimer.stop();
         rtpSenderTimer.stop();
         rtpHandler.closeAll();
-        speaker.drain();
-        speaker.close();
+        if (isReceiver) {
+            speaker.drain();
+            speaker.close();
+        }
+        if (isSender) {
+            audio.closeMic();
+        }
     }
 
     private void responseToBye(RequestEvent requestEvent) {
@@ -224,8 +230,11 @@ public class Client implements SipListener {
         if (response.getStatusCode() == Response.OK) {
             switch (cseq.getMethod()) {
                 case Request.INVITE:
+                    //in order to avoid duplicate sending and receiving the caller is the sender and callee is a receiver
+                    isSender = true;
+                    isReceiver = false;
                     //other client wants to talk
-                    openRTPWhenCall(response);
+                    openRTPWhenCall(Utils.extractPortFromSdp(response.getContent()));
                     //the right sip flow
                     sendACK(response, clientTransaction);
                     break;
@@ -240,7 +249,8 @@ public class Client implements SipListener {
                     //stop sending audio from microphone
                     rtpSenderTimer.stop();
                     rtpHandler.getSender().close();
-                    audio.closeMic();
+                    if (isSender)
+                        audio.closeMic();
                     break;
             }
         }
@@ -268,11 +278,11 @@ public class Client implements SipListener {
         System.out.println("transaction state is " + clientTransaction.getState());
     }
 
-    private void openRTPWhenCall(Response response) {
+    private void openRTPWhenCall(int port) {
         //client2 has started sending so the receiver can be opened without getting receiveTimeout exception
         //after ack cient2 will start receiving
-        rtpHandler = new RTPHandler(server.split(":")[0], Utils.extractPortFromSdp(response.getContent()), rtpPort, false);
-        System.out.println("sending to server on " + Utils.extractPortFromSdp(response.getContent()) + " and receiving from server on " + rtpPort);
+        rtpHandler = new RTPHandler(server.split(":")[0], port, rtpPort, false);
+        System.out.println("sending to server on " + port + " and receiving from server on " + rtpPort);
 
         try {
             audio = new AudioStream();
@@ -353,11 +363,19 @@ public class Client implements SipListener {
         }
     };
 
+    private ActionListener senderListener = isSender ? senderActionListener : notSenderActionListener;
+    private ActionListener receiverListener = isReceiver ? receiverActionListener : notReceiverActionListener;
+
     //end a call
     public void sendBye() {
         if (!byeTaskRunning) {
             byeTaskRunning = true;
+            rtpReceiverTimer.stop();
             rtpHandler.getReceiver().close();
+            if (isReceiver) {
+                speaker.drain();
+                speaker.close();
+            }
             Request byeRequest = null;
             try {
                 byeRequest = dialog.createRequest(Request.BYE);
@@ -558,5 +576,8 @@ public class Client implements SipListener {
 
     public void processDialogTerminated(DialogTerminatedEvent dialogTerminatedEvent) {
         System.out.println("dialogTerminatedEvent" + dialogTerminatedEvent.getDialog().getDialogId());
+        dialog = null;
+        isInConversation = false;
+        iConnectSipToGUI.handleBye();
     }
 }

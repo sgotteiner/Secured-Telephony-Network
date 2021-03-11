@@ -7,5 +7,5 @@ import javax.sip.ServerTransaction;
 public interface IConnectSipToGUI {
     public void handleCallInvitation(RequestEvent requestEvent, ServerTransaction serverTransaction);
 
-//    public void handleBye();
+    public void handleBye();
 }
