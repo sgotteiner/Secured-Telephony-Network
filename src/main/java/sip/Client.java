@@ -18,6 +18,7 @@ import javax.sound.sampled.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.net.DatagramPacket;
+import java.net.DatagramSocket;
 import java.util.ArrayList;
 import java.util.Properties;
 import java.util.Timer;
@@ -53,6 +54,7 @@ public class Client implements SipListener {
     private ClientDetails clientDetails;
     private String server = "127.0.0.1:5080";
 
+    private DatagramSocket datagramSocket;
     private int rtpPort;
     private RTPHandler rtpHandler;
     private static AudioStream audio = null;
@@ -90,9 +92,7 @@ public class Client implements SipListener {
         if (serverTransaction == null) {
             try {
                 serverTransaction = sipProvider.getNewServerTransaction(request);
-            } catch (TransactionAlreadyExistsException e) {
-                e.printStackTrace();
-            } catch (TransactionUnavailableException e) {
+            } catch (TransactionAlreadyExistsException | TransactionUnavailableException e) {
                 e.printStackTrace();
             }
         }
@@ -108,6 +108,12 @@ public class Client implements SipListener {
             isSender = false;
             isReceiver = true;
             openRTPWhenCalled();
+        } else if (request.getMethod().equals(Request.REGISTER)){
+            //a register request with expires = 0 is unregister request (in this case from the server)
+            if(((ContactHeader)request.getHeader(ContactHeader.NAME)).getExpires() == 0 && isInConversation && isSender) {
+                //only the caller sends the bye
+                sendBye();
+            }
         }
     }
 
@@ -132,6 +138,7 @@ public class Client implements SipListener {
                 " with server transaction id " + serverTransaction);
         System.out.println(request.getHeader(FromHeader.NAME) + "" + request.getHeader(ToHeader.NAME) +
                 request.getHeader(CallIdHeader.NAME));
+        iConnectSipToGUI.printMessage("Request received: " + request.getMethod() + " at: " + System.currentTimeMillis() % 100000);
     }
 
     public void responseToInvite(RequestEvent requestReceivedEvent, ServerTransaction serverTransaction) {
@@ -140,7 +147,10 @@ public class Client implements SipListener {
 
             //client2 starts sending for now. When client1 gets the OK he will start sending and receiving.
             //In the ACK client2 will start Receiving
-            rtpHandler = new RTPHandler(clientDetails.getMyIP(), Utils.extractPortFromSdp(request.getContent()), rtpPort, false);
+            int sendPort = Utils.extractPortFromSdp(request.getContent());
+            rtpHandler = new RTPHandler(server.split(":")[0], sendPort, datagramSocket, false);
+            iConnectSipToGUI.printMessage("Sending to " + server.split(":")[0] +
+                    ":" + sendPort + " to server and receiving at " + clientDetails.getMyIP() + ":" + rtpPort);
             rtpSenderTimer = new javax.swing.Timer(100, notSenderActionListener);
             rtpSenderTimer.start();
 
@@ -148,6 +158,7 @@ public class Client implements SipListener {
 
             if (!isInConversation) {
                 response = messageFactory.createResponse(Response.RINGING, request);
+                iConnectSipToGUI.printMessage("Send RINGING to INVITE");
                 serverTransaction.sendResponse(response);
             }
 
@@ -172,6 +183,7 @@ public class Client implements SipListener {
             Utils.addContent(headerFactory, response, rtpPort);
 
             serverTransaction.sendResponse(response);
+            iConnectSipToGUI.printMessage("Send OK to INVITE");
 
             dialog = serverTransaction.getDialog();
 
@@ -182,6 +194,7 @@ public class Client implements SipListener {
     }
 
     public void processBye(RequestEvent requestEvent) {
+        System.out.println("got a bye .");
         closeRTP();
         responseToBye(requestEvent);
     }
@@ -202,7 +215,6 @@ public class Client implements SipListener {
     private void responseToBye(RequestEvent requestEvent) {
         try {
             ServerTransaction serverTransaction = requestEvent.getServerTransaction();
-            System.out.println("got a bye .");
             Response response = messageFactory.createResponse(Response.OK, requestEvent.getRequest());
             if (serverTransaction == null) {
                 System.out.println("null TransactionID.");
@@ -214,6 +226,7 @@ public class Client implements SipListener {
             Utils.addContent(headerFactory, response, rtpPort);
             serverTransaction.sendResponse(response);
             System.out.println("Client:  Sending OK.");
+            iConnectSipToGUI.printMessage("Sending OK to BYE");
             System.out.println("Dialog State = " + dialog.getState());
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -230,6 +243,7 @@ public class Client implements SipListener {
         if (response.getStatusCode() == Response.OK) {
             switch (cseq.getMethod()) {
                 case Request.INVITE:
+                    isInConversation = true;
                     //in order to avoid duplicate sending and receiving the caller is the sender and callee is a receiver
                     isSender = true;
                     isReceiver = false;
@@ -261,6 +275,8 @@ public class Client implements SipListener {
         System.out.println("Response received : Status Code = " + response.getStatusCode() + " " + cseq);
         System.out.println(response.getHeader(FromHeader.NAME) + "" + response.getHeader(ToHeader.NAME) +
                 response.getHeader(CallIdHeader.NAME));
+        iConnectSipToGUI.printMessage("Response received: Status Code = " + response.getStatusCode()
+                + " at: " + System.currentTimeMillis() % 100000);
     }
 
     //acknowledge the callee's ok
@@ -272,6 +288,7 @@ public class Client implements SipListener {
             Request ackRequest = dialog.createAck(((CSeqHeader) response.getHeader(CSeqHeader.NAME)).getSeqNumber());
             Utils.addContent(headerFactory, ackRequest, rtpPort);
             dialog.sendAck(ackRequest);
+            iConnectSipToGUI.printMessage("Sending ACK to response OK");
         } catch (InvalidArgumentException | SipException e) {
             e.printStackTrace();
         }
@@ -281,8 +298,10 @@ public class Client implements SipListener {
     private void openRTPWhenCall(int port) {
         //client2 has started sending so the receiver can be opened without getting receiveTimeout exception
         //after ack cient2 will start receiving
-        rtpHandler = new RTPHandler(server.split(":")[0], port, rtpPort, false);
+        rtpHandler = new RTPHandler(server.split(":")[0], port, datagramSocket, false);
         System.out.println("sending to server on " + port + " and receiving from server on " + rtpPort);
+        iConnectSipToGUI.printMessage("Sending to " + server.split(":")[0] + ":" +
+                port + " to server and receiving at " + clientDetails.getMyIP() + ":" + rtpPort);
 
         try {
             audio = new AudioStream();
@@ -383,6 +402,7 @@ public class Client implements SipListener {
             } catch (SipException e) {
                 e.printStackTrace();
             }
+            iConnectSipToGUI.printMessage("Sending BYE");
             byeTimer = new Timer();
             byeTimer.schedule(new Client.ByeTask(byeRequest), 4000);
         }
@@ -402,24 +422,22 @@ public class Client implements SipListener {
     public void init(String myIP, int mySipPort, String serverAddress, IConnectSipToGUI iConnectSipToGUI) {
         this.myIP = myIP;
         this.mySipPort = mySipPort;
-        this.rtpPort = Utils.getRandomPort();
+        this.datagramSocket = Utils.getRandomPort();
+        this.rtpPort = datagramSocket.getLocalPort();
+        this.iConnectSipToGUI = iConnectSipToGUI;
 
         initFactories();
 
         initStack(serverAddress);
 
         initSipProvider();
-
-        this.iConnectSipToGUI = iConnectSipToGUI;
-
-//        register("Client1Name", "Client1NameDisplay", "port5060.com",
-//                "ServerName", null, "port5080.com");
     }
 
     private void initSipProvider() {
         //ha the listening point
         try {
             udpListeningPoint = sipStack.createListeningPoint(myIP, mySipPort, transport);
+            iConnectSipToGUI.printMessage("Listening on " + myIP + ":" + mySipPort + " in " + transport);
             System.out.println("listeningPoint = " + udpListeningPoint);
             sipProvider = sipStack.createSipProvider(udpListeningPoint);
             System.out.println("SipProvider = " + sipProvider);
@@ -472,10 +490,12 @@ public class Client implements SipListener {
 
     public void register(String fromUsername, String fromDisplay, String fromDomain,
                          String myIP, int myPort, String serverAddress, IConnectSipToGUI iConnectSipToGUI) {
-        init(myIP, myPort, serverAddress, iConnectSipToGUI);
+        if(clientDetails == null || !clientDetails.hasSameDetails(myIP, myPort, serverAddress)) {
+            init(myIP, myPort, serverAddress, iConnectSipToGUI);
+            clientDetails = new ClientDetails(fromUsername, fromDisplay,
+                    fromDomain, myIP, myPort, serverAddress);
+        }
         //can't call and receive calls before registering
-        clientDetails = new ClientDetails(fromUsername, fromDisplay,
-                fromDomain, myIP, myPort, serverAddress);
         Request request = createRequset(Request.REGISTER, "Server", null, "port80.com", serverAddress);
         createClientTransaction(request);
     }
@@ -490,10 +510,12 @@ public class Client implements SipListener {
                 dialog.sendRequest(clientTransaction);
             else clientTransaction.sendRequest();
             System.out.println();
-            System.out.println("Sending Request:" + request.getMethod());
+            System.out.println("Sending Request: " + request.getMethod());
+            iConnectSipToGUI.printMessage("Sending Request: " + request.getMethod() + " at: " + System.currentTimeMillis() % 100000);
             System.out.println(request.getHeader(FromHeader.NAME) + "" + request.getHeader(ToHeader.NAME));
 
             dialog = clientTransaction.getDialog();
+            clientTransaction.setApplicationData(dialog);
         } catch (Exception e) {
             printException(e);
         }

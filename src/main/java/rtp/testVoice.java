@@ -8,6 +8,9 @@ import javax.swing.Timer;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.SocketException;
+import java.util.logging.Handler;
 
 public class testVoice {
 
@@ -20,7 +23,13 @@ public class testVoice {
     public static void main(String[] args) {
 
         RTPSender rtpSender = new RTPSender("localhost", 10000);
-        RTPReciever rtpReciever = new RTPReciever(10000);
+        DatagramSocket datagramSocket = null;
+        try {
+            datagramSocket = new DatagramSocket(10000);
+        } catch (SocketException e) {
+            e.printStackTrace();
+        }
+        RTPReciever rtpReciever = new RTPReciever(datagramSocket);
 
         buf = new byte[1024];
         datagramPacket = new DatagramPacket(buf, buf.length);
@@ -31,7 +40,7 @@ public class testVoice {
             e.printStackTrace();
         }
 
-        AudioFormat format = new AudioFormat(8000.0f, 16, 1, true, true);
+        AudioFormat format = new AudioFormat(8000, 16, 1, true, true);
         DataLine.Info dataLineInfo = new DataLine.Info(SourceDataLine.class, format);
         try {
             speaker = (SourceDataLine) AudioSystem.getLine(dataLineInfo);
@@ -43,6 +52,7 @@ public class testVoice {
 
         AudioCalculator audioCalculator = new AudioCalculator();
 
+
         Timer sendTimer = new Timer(100, new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -50,10 +60,10 @@ public class testVoice {
                 int audioLength = 0;
                 try {
                     audioLength = audio.getnextframe(buf);
-//                        audioCalculator.setBytes(buf, audioLength);
-//                        double decibel = audioCalculator.getDecibel();
-//                        double frequency = audioCalculator.getFrequency();
-//                        System.out.println("Frequency: " + frequency + ", Decibel: " + decibel);
+                    audioCalculator.setBytes(buf, audioLength);
+                    double decibel = audioCalculator.getDecibel();
+                    double frequency = audioCalculator.getPrinstonFrequency();
+                    System.out.println("Frequency: " + frequency + ", Decibel: " + decibel);
                 } catch (Exception ex) {
                     ex.printStackTrace();
                 }
@@ -94,7 +104,7 @@ public class testVoice {
         while (flag) {
             sendTimer.start();
 
-            receiveTimer.start();
+//            receiveTimer.start();
         }
 
         receiveTimer.stop();

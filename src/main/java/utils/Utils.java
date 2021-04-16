@@ -6,6 +6,8 @@ import javax.sip.header.HeaderFactory;
 import javax.sip.message.Message;
 import javax.sip.message.Request;
 import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
@@ -14,13 +16,14 @@ import java.util.Random;
 public class Utils {
 
     //TODO better function because this doesn't always work for some reason
-    public static int getRandomPort() {
+    public static DatagramSocket getRandomPort() {
         Random r = new Random();
+        DatagramSocket datagramSocket = null;
         while (true) {
-            int port = r.nextInt(50);
+            int port = r.nextInt(4) + 6000;
             try {
-                new ServerSocket(port + 6000).close();
-                return port + 6000;
+                datagramSocket = new DatagramSocket(port);
+                return datagramSocket;
             } catch (IOException e) {
 
             }
