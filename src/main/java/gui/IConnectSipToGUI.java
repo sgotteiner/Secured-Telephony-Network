@@ -4,7 +4,7 @@ import javax.sip.RequestEvent;
 import javax.sip.ResponseEvent;
 import javax.sip.ServerTransaction;
 
-public interface IConnectSipToGUI {
+public interface IConnectSipToGUI extends IMessageInGUI {
     public void handleCallInvitation(RequestEvent requestEvent, ServerTransaction serverTransaction);
 
     public void handleBye();

@@ -20,7 +20,7 @@ public class AudioStream {
     //-----------------------------------
     public AudioStream() throws Exception {
 
-        format = new AudioFormat(8000.0f, 16, 1, true, true);
+        format = new AudioFormat(8000, 16, 1, true, true);
 
         microphone = AudioSystem.getTargetDataLine(format);
         DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);

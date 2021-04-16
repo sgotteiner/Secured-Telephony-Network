@@ -1,5 +1,7 @@
 package db;
 
+import gui.IMessageInGUI;
+
 import java.sql.*;
 
 public class PermissionDB {
@@ -105,6 +107,80 @@ public class PermissionDB {
         }
     }
 
+    public void addCallPermissionManually(String userIP, String startIP, String endIP) {
+        String query = "insert into allow_call (ip, start_ip, end_ip) select " +
+                "'" + userIP + "', '" + startIP + "', '" + endIP + "'"
+                + " where not exists(" +
+                "select 1 from allow_call where" +
+                " ip = '" + userIP + "' and start_ip = '" + startIP + "' and end_ip = '" + endIP + "')";
+        try {
+            statement = connection.createStatement();
+            statement.executeUpdate(query);
+        } catch (SQLException throwables) {
+            throwables.printStackTrace();
+        } finally {
+            try {
+                statement.close();
+            } catch (SQLException throwables) {
+                throwables.printStackTrace();
+            }
+        }
+    }
+
+    public void addRegisterPermissionManually(String startIP, String endIP) {
+        String query = "insert into allow_register (start_ip, end_ip) select " +
+                "'" + startIP + "', '" + endIP + "'"
+                + " where not exists(" +
+                "select 1 from allow_call where " +
+                "start_ip = '" + startIP + "' and end_ip = '" + endIP + "')";
+        try {
+            statement = connection.createStatement();
+            statement.executeUpdate(query);
+        } catch (SQLException throwables) {
+            throwables.printStackTrace();
+        } finally {
+            try {
+                statement.close();
+            } catch (SQLException throwables) {
+                throwables.printStackTrace();
+            }
+        }
+    }
+
+    public void deleteCallPermission(String userIP, String startIP, String endIP) {
+        String query = "delete from allow_call where" +
+                " ip = '" + userIP + "' and start_ip = '" + startIP + "' and end_ip = '" + endIP + "'";
+        try {
+            statement = connection.createStatement();
+            statement.executeUpdate(query);
+        } catch (SQLException throwables) {
+            throwables.printStackTrace();
+        } finally {
+            try {
+                statement.close();
+            } catch (SQLException throwables) {
+                throwables.printStackTrace();
+            }
+        }
+    }
+
+    public void deleteRegisterPermission(String startIP, String endIP) {
+        String query = "delete from allow_register where" +
+                " start_ip = '" + startIP + "' and end_ip = '" + endIP + "'";
+        try {
+            statement = connection.createStatement();
+            statement.executeUpdate(query);
+        } catch (SQLException throwables) {
+            throwables.printStackTrace();
+        } finally {
+            try {
+                statement.close();
+            } catch (SQLException throwables) {
+                throwables.printStackTrace();
+            }
+        }
+    }
+
     private boolean isInRange(String ip, ResultSet resultSet) {
         boolean isOK = false;
         int compareStart = 0;
@@ -146,5 +222,48 @@ public class PermissionDB {
             numbers[i] = Integer.parseInt(ipStrings[i]);
         }
         return numbers;
+    }
+
+    public void showRegister(IMessageInGUI iMessageInGUI) {
+        try {
+            statement = connection.createStatement();
+            String query = "select * from allow_register"; // only ranges that this ip can call
+            ResultSet resultSet = statement.executeQuery(query);
+
+            iMessageInGUI.printMessage("The register Permissions are:");
+            while (resultSet.next()) {
+                iMessageInGUI.printMessage(resultSet.getString("start_ip") + " | " + resultSet.getString("end_ip"));
+            }
+        } catch (SQLException throwables) {
+            throwables.printStackTrace();
+        } finally {
+            try {
+                statement.close();
+            } catch (SQLException throwables) {
+                throwables.printStackTrace();
+            }
+        }
+    }
+
+    public void showCall(IMessageInGUI iMessageInGUI) {
+        try {
+            statement = connection.createStatement();
+            String query = "select * from allow_call"; // only ranges that this ip can call
+            ResultSet resultSet = statement.executeQuery(query);
+
+            iMessageInGUI.printMessage("The call Permissions are:");
+            while (resultSet.next()) {
+                iMessageInGUI.printMessage(resultSet.getString("ip") + " | " +
+                        resultSet.getString("start_ip") + " | " + resultSet.getString("end_ip"));
+            }
+        } catch (SQLException throwables) {
+            throwables.printStackTrace();
+        } finally {
+            try {
+                statement.close();
+            } catch (SQLException throwables) {
+                throwables.printStackTrace();
+            }
+        }
     }
 }

@@ -1,8 +1,11 @@
 package sip;
 
 import db.PermissionDB;
+import gov.nist.javax.sip.header.Expires;
 import gov.nist.javax.sip.header.From;
 import gov.nist.javax.sip.header.To;
+import gov.nist.javax.sip.header.extensions.SessionExpires;
+import gui.IMessageInGUI;
 import rtp.RTPHandler;
 import utils.Utils;
 
@@ -14,6 +17,8 @@ import javax.sip.header.*;
 import javax.sip.message.MessageFactory;
 import javax.sip.message.Request;
 import javax.sip.message.Response;
+import java.net.DatagramSocket;
+import java.net.SocketException;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -46,13 +51,29 @@ public class Proxy implements SipListener {
     private final HashMap<String, SipURI> registrar = new HashMap<String, SipURI>();
 
     //saves the port that receives and sends to a client
-    private final HashMap<String, String> rtpClientServer = new HashMap<String, String>();
+    private final HashMap<String, String> rtpClientServer = new HashMap<>();
     //saves the ports that the two clients in the conversation are receiving
-    private final HashMap<String, String> rtpClients = new HashMap<String, String>();
+    private final HashMap<String, String> rtpClients = new HashMap<>();
     //save ports after invite until response ok and after response ok until ack
-    private final HashMap<String, String> waitingMap = new HashMap<String, String>();
+    private final HashMap<String, String> waitingMap = new HashMap<>();
+    private final HashMap<Integer, DatagramSocket> socketsMap = new HashMap<>();
     //save the handler with its send port (the port that the clients receive
-    private final HashMap<String, RTPHandler> rtpHandlers = new HashMap<String, RTPHandler>();
+    private final HashMap<String, RTPHandler> rtpHandlers = new HashMap<>();
+
+    private boolean isRunning = false;
+
+    private IMessageInGUI iMessageInGUI;
+
+    public Proxy() {
+    }
+
+    private static Proxy instance;
+
+    public static Proxy getInstance() {
+        if (instance == null)
+            instance = new Proxy();
+        return instance;
+    }
 
     //process and forward the request to the relevant clients
     public void processRequest(RequestEvent requestEvent) {
@@ -110,6 +131,9 @@ public class Proxy implements SipListener {
                         rtpHandlers.remove(address);
                         rtpClientServer.remove(address);
                         System.out.println(rtpClientServer.size());
+                        if (!isRunning && rtpClientServer.size() == 0) {
+                            registrar.clear();
+                        }
                     }
                 }
                 st.sendResponse(otherResponse);
@@ -123,22 +147,29 @@ public class Proxy implements SipListener {
     private int managePortsAfterInviteOK(ServerTransaction st, Response response) {
         int rtpPort1 = Utils.extractPortFromSdp(st.getRequest().getContent());
         String ip1 = Utils.getSenderIPfromMessage(st.getRequest());
-        int portServer1 = Utils.getRandomPort();
+        DatagramSocket datagramSocket = Utils.getRandomPort();
+        socketsMap.put(datagramSocket.getLocalPort(), datagramSocket);
+        int portServer1 = datagramSocket.getLocalPort();
         int rtpPort2 = Utils.extractPortFromSdp(response.getContent());
         String ip2 = Utils.getSenderIPfromMessage(response);
         int portServer2 = Integer.parseInt(waitingMap.get(myIP + ":" + rtpPort1).split(":")[1]);
         waitingMap.remove(myIP + ":" + rtpPort1);
         rtpClients.put(ip1 + ":" + rtpPort1, ip2 + ":" + rtpPort2);
         rtpClientServer.put(ip2 + ":" + rtpPort2, myIP + ":" + portServer2);
-        waitingMap.put(ip1 + ":" + rtpPort2, myIP + ":" + portServer1); //rtpPort2 will be got in ack and then an rtp handler will be created
+        waitingMap.put(ip1 + ":" + rtpPort2, myIP + ":" + portServer1); //rtpPort will be got in ack and then an rtp handler will be created
         rtpClientServer.put(ip1 + ":" + rtpPort1, myIP + ":" + portServer1); //the rtp handler will be created after client1 ack
         //start receive from client2 and send to client1
-        rtpHandlers.put(ip1 + ":" + rtpPort1, new RTPHandler(myIP, rtpPort1, portServer2, true));
+        rtpHandlers.put(ip1 + ":" + rtpPort1, new RTPHandler(myIP, rtpPort1, socketsMap.get(portServer2), true));
+        socketsMap.remove(portServer2);
 
         System.out.println("client1 sends rtp to server to " + portServer1 + " and the server sends to " + rtpPort1 + " in client1, the handler will be created in ack");
         System.out.println("client2 sends rtp to server to " + portServer2 + " and the server sends to " + rtpPort2 + " in client2");
         System.out.println("after ack of client1 handler that receives at " + portServer2 + " from client2 and sends to " + rtpPort1 + " at client1");
         System.out.println("after ack of client1 handler that receives at " + portServer1 + " from client1 and sends to " + rtpPort2 + " at client2");
+        iMessageInGUI.printMessage("client1 sends rtp to server to " + portServer1 + " and the server sends to " + rtpPort1 + " in client1");
+        iMessageInGUI.printMessage("client2 sends rtp to server to " + portServer2 + " and the server sends to " + rtpPort2 + " in client2");
+        iMessageInGUI.printMessage("handler that receives at " + portServer2 + " from client2 and sends to " + rtpPort1 + " at client1");
+        iMessageInGUI.printMessage("handler that receives at " + portServer1 + " from client1 and sends to " + rtpPort2 + " at client2");
 
         return portServer1;
     }
@@ -164,10 +195,10 @@ public class Proxy implements SipListener {
 
         String address2 = rtpClients.get(myIP + ":" + rtpPort1);
         int rtpPort2 = Integer.parseInt(address2.split(":")[1]);
-        String serverPort2 = waitingMap.get(address2);
+        int serverPort2 = Integer.parseInt(waitingMap.get(address2).split(":")[1]);
         //receive from client1 and send to client2
         rtpHandlers.put(address2, new RTPHandler(myIP,
-                rtpPort2, Integer.parseInt(serverPort2.split(":")[1]), true));
+                rtpPort2, socketsMap.get(serverPort2), true));
         waitingMap.remove(myIP + ":" + rtpPort2);
 
         System.out.println("handler receives at " + serverPort2 + " from client1 and sends to " + rtpPort2 + " at client2");
@@ -222,6 +253,8 @@ public class Proxy implements SipListener {
         boolean isCall = PermissionDB.getInstance().isIPgoodForCall(ip, toUri.getHost());
         if (isCall) {
             forwardCall(st, request, toUri);
+        } else {
+            iMessageInGUI.printMessage(ip + " can't call " + toUri.getHost());
         }
     }
 
@@ -239,8 +272,10 @@ public class Proxy implements SipListener {
             } catch (SipException | InvalidArgumentException | ParseException e) {
                 e.printStackTrace();
             }
+            String name = (fromUri == null ? from.getAddress().getDisplayName() : "") + (toUri == null ? " - " + ((To)to).getDisplayName() : "");
             System.out.println("User is not registered.");
-            throw new RuntimeException("User not registered");
+            iMessageInGUI.printMessage(name + " not registered.");
+            throw new RuntimeException("User is not registered");
         }
         return toUri;
     }
@@ -271,10 +306,12 @@ public class Proxy implements SipListener {
     //create the client transaction for the call, returns it and sends the request
     private ClientTransaction call(Request request) {
         try {
-            String receiveFromClient2Adress = myIP + ":" + Utils.getRandomPort();
+            DatagramSocket datagramSocket = Utils.getRandomPort();
+            socketsMap.put(datagramSocket.getLocalPort(), datagramSocket);
+            String receiveFromClient2Address = myIP + ":" + datagramSocket.getLocalPort();
             //remember the port that receives data from client2
-            waitingMap.put(Utils.getAddress(request), receiveFromClient2Adress);
-            request = createRequest(request, Integer.parseInt(receiveFromClient2Adress.split(":")[1]));
+            waitingMap.put(Utils.getAddress(request), receiveFromClient2Address);
+            request = createRequest(request, Integer.parseInt(receiveFromClient2Address.split(":")[1]));
             ClientTransaction clientTransaction = sipProvider.getNewClientTransaction(request);
             clientTransaction.sendRequest();
             return clientTransaction;
@@ -288,6 +325,16 @@ public class Proxy implements SipListener {
     //register a user to the system if his ip has a permission
     private void processRegister(RequestEvent requestEvent) {
         Request request = requestEvent.getRequest();
+        Response response = null;
+        ServerTransaction serverTransaction = null;
+        try {
+            if (isRunning) {
+                response = messageFactory.createResponse(Response.OK, request);
+            } else response = messageFactory.createResponse(Response.SERVER_INTERNAL_ERROR, request);
+            serverTransaction = sipProvider.getNewServerTransaction(request);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         String ip = Utils.getSenderIPfromMessage(request);
         boolean isRegister = PermissionDB.getInstance().isIPgoodForRegistration(ip);
         if (isRegister) {
@@ -295,15 +342,15 @@ public class Proxy implements SipListener {
             ContactHeader contact = (ContactHeader) request.getHeader(ContactHeader.NAME);
             SipURI contactUri = (SipURI) contact.getAddress().getURI();
             FromHeader from = (FromHeader) request.getHeader(FromHeader.NAME);
-            SipURI fromUri = (SipURI) from.getAddress().getURI();
             registrar.put(((From) from).getDisplayName(), contactUri);
+            iMessageInGUI.printMessage("Registration confirmed for ip: " + ip);
             try {
-                Response response = messageFactory.createResponse(Response.OK, request);
-                ServerTransaction serverTransaction = sipProvider.getNewServerTransaction(request);
                 serverTransaction.sendResponse(response);
             } catch (Exception e) {
                 e.printStackTrace();
             }
+        } else {
+            iMessageInGUI.printMessage("Registration denied for ip: " + ip);
         }
     }
 
@@ -322,13 +369,16 @@ public class Proxy implements SipListener {
     }
 
     //initial the sip factories and stack
-    private void init() {
+    public void init(IMessageInGUI iMessageInGUI) {
 
         initFactories();
 
         initStack();
 
         initSipProvider();
+
+        isRunning = true;
+        this.iMessageInGUI = iMessageInGUI;
     }
 
     private void initSipProvider() {
@@ -374,7 +424,8 @@ public class Proxy implements SipListener {
 
     //start the pbx
     public static void main(String[] args) {
-        new Proxy().init();
+        instance = new Proxy();
+        instance.init(null);
     }
 
     public void processIOException(IOExceptionEvent exceptionEvent) {
@@ -445,5 +496,98 @@ public class Proxy implements SipListener {
     private void printException(Exception e) {
         e.printStackTrace();
         System.err.println(e.getMessage());
+    }
+
+    public void stop() {
+        //if there are no calls
+        if (rtpClientServer.size() == 0)
+            registrar.clear();
+        Object[] keys = registrar.keySet().toArray();
+        for (int i = 0; i < keys.length; i++) {
+            sendByeToClient(registrar.get(keys[i]));
+        }
+        isRunning = false;
+    }
+
+    private void sendByeToClient(SipURI contactURI) {
+        Request request = null;
+
+        try {
+            // create >From Header
+            SipURI fromAddress = addressFactory.createSipURI("Server", "Server");
+            Address fromNameAddress = addressFactory.createAddress(fromAddress);
+            fromNameAddress.setDisplayName("Server");
+            FromHeader fromHeader = headerFactory.createFromHeader(fromNameAddress, "12345");
+
+            // create To Header
+            SipURI toAddress = addressFactory.createSipURI(contactURI.getUser(), "toDomain");
+            Address toNameAddress = addressFactory.createAddress(toAddress);
+            toNameAddress.setDisplayName("user");
+            ToHeader toHeader = headerFactory.createToHeader(toNameAddress, null);
+
+            // create Request URI
+            SipURI requestURI = addressFactory.createSipURI("user", contactURI.getHost() + ":" + contactURI.getPort());
+
+            // Create ViaHeaders
+            ArrayList viaHeaders = new ArrayList();
+            ViaHeader viaHeader = headerFactory.createViaHeader(listeningPoint.getIPAddress(), listeningPoint.getPort(), transport, null);
+
+            // add via headers
+            viaHeaders.add(viaHeader);
+
+            // Create a new CallId header
+            CallIdHeader callIdHeader = sipProvider.getNewCallId();
+
+            // Create a new Cseq header
+            CSeqHeader cSeqHeader = headerFactory.createCSeqHeader(1L, Request.REGISTER);
+
+            // Create a new MaxForwardsHeader
+            MaxForwardsHeader maxForwardsHeader = headerFactory.createMaxForwardsHeader(70);
+
+            // Create the request.
+            request = messageFactory.createRequest(requestURI, Request.REGISTER, callIdHeader, cSeqHeader, fromHeader, toHeader, viaHeaders, maxForwardsHeader);
+
+            // Create the contact name address.
+            SipURI serverURI = addressFactory.createSipURI("Server", listeningPoint.getIPAddress());
+            contactURI.setPort(listeningPoint.getPort());
+
+            Address contactAddress = addressFactory.createAddress(contactURI);
+
+            // Add the contact address.
+            contactAddress.setDisplayName("Server");
+
+            ContactHeader contactHeader = headerFactory.createContactHeader(contactAddress);
+            contactHeader.setExpires(0);
+            request.addHeader(contactHeader);
+
+            ClientTransaction clientTransaction = sipProvider.getNewClientTransaction(request);
+            clientTransaction.sendRequest();
+        } catch (Exception e) {
+            printException(e);
+        }
+    }
+
+    public void addCallPermission(String userIP, String startIP, String endIP) {
+        PermissionDB.getInstance().addCallPermissionManually(userIP, startIP, endIP);
+    }
+
+    public void addRegisterPermission(String startIP, String endIP) {
+        PermissionDB.getInstance().addRegisterPermissionManually(startIP, endIP);
+    }
+
+    public void deleteCallPermission(String userIP, String startIP, String endIP) {
+        PermissionDB.getInstance().deleteCallPermission(userIP, startIP, endIP);
+    }
+
+    public void deleteRegisterPermission(String startIP, String endIP) {
+        PermissionDB.getInstance().deleteRegisterPermission(startIP, endIP);
+    }
+
+    public void showRegister() {
+        PermissionDB.getInstance().showRegister(iMessageInGUI);
+    }
+
+    public void showCall() {
+        PermissionDB.getInstance().showCall(iMessageInGUI);
     }
 }

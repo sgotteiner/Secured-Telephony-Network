@@ -5,6 +5,7 @@ import sip.Client;
 import javax.sip.RequestEvent;
 import javax.sip.ServerTransaction;
 import javax.swing.*;
+import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 
@@ -24,6 +25,7 @@ public class Softphone2 {
     private JButton btnRegister;
     private boolean isRegistered = false;
     private JTextArea terminal;
+    private JScrollPane scrollPane;
 
     private IConnectSipToGUI iConnectSipToGUI;
     private RequestEvent requestEvent;
@@ -39,6 +41,7 @@ public class Softphone2 {
         txtMyPort.setText("5061");
         txtServerIP.setText("127.0.0.1");
         txtServerPort.setText("5080");
+        scrollPane.setPreferredSize(new Dimension(getPanel().getWidth(), 150));
 
         iConnectSipToGUI = new IConnectSipToGUI() {
             @Override
@@ -53,6 +56,11 @@ public class Softphone2 {
             public void handleBye() {
                 btnCallHangupAnswer.setText("Call");
                 isInCall = false;
+            }
+
+            @Override
+            public void printMessage(String message) {
+                terminal.append(message + "\n");
             }
         };
 

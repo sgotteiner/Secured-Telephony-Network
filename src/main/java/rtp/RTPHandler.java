@@ -4,6 +4,7 @@ import javax.swing.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.net.DatagramPacket;
+import java.net.DatagramSocket;
 
 public class RTPHandler {
 
@@ -12,11 +13,11 @@ public class RTPHandler {
     private Timer timer;
     private boolean isServer;
 
-    public RTPHandler(String ip, int sendPort, int receivePort, boolean isServer) {
+    public RTPHandler(String ip, int sendPort, DatagramSocket receiveSocket, boolean isServer) {
 
-        System.out.println("handler created: receives at " + receivePort + ", sends to " + sendPort);
+        System.out.println("handler created: receives at " + receiveSocket.getLocalPort() + ", sends to " + sendPort);
         this.sender = new RTPSender(ip, sendPort);
-        this.receiver = new RTPReciever(receivePort);
+        this.receiver = new RTPReciever(receiveSocket);
         this.isServer = isServer;
 
         if (isServer) {

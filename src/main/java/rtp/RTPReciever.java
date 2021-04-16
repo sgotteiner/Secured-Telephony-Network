@@ -13,13 +13,12 @@ public class RTPReciever {
     private DatagramSocket socket;
     private int port;
 
-    public RTPReciever(int port) {
+    public RTPReciever(DatagramSocket datagramSocket) {
 
-        this.port = port;
+        this.port = datagramSocket.getLocalPort();
 
+        socket = datagramSocket;
         try {
-            Utils.printCurrentTime(port, "open","receiver");
-            socket = new DatagramSocket(port);
             socket.setSoTimeout(200);
         } catch (SocketException e) {
             e.printStackTrace();

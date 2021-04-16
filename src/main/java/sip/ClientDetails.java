@@ -35,11 +35,9 @@ public class ClientDetails {
         return myIP;
     }
 
-    public int getMySipPort() {
-        return mySipPort;
-    }
-
-    public String getServerAddress() {
-        return serverAddress;
+    public boolean hasSameDetails(String myIP, int myPort, String serverAddress) {
+        if(this.myIP.equals(myIP) || this.mySipPort == myPort || this.serverAddress.equals(serverAddress))
+            return true;
+        return false;
     }
 }
