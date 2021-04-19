@@ -1,10 +1,8 @@
 package sip;
 
 import db.PermissionDB;
-import gov.nist.javax.sip.header.Expires;
 import gov.nist.javax.sip.header.From;
 import gov.nist.javax.sip.header.To;
-import gov.nist.javax.sip.header.extensions.SessionExpires;
 import gui.IMessageInGUI;
 import rtp.RTPHandler;
 import utils.Utils;
@@ -18,7 +16,6 @@ import javax.sip.message.MessageFactory;
 import javax.sip.message.Request;
 import javax.sip.message.Response;
 import java.net.DatagramSocket;
-import java.net.SocketException;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -48,7 +45,10 @@ public class Proxy implements SipListener {
 
     public static final boolean callerSendsBye = true;
 
+    //saves user display name as a key to the user's contact uri
     private final HashMap<String, SipURI> registrar = new HashMap<String, SipURI>();
+    //necessary only because the whole network is on my local machine and I need to save the client ports
+    private HashMap<Integer, Boolean> rtpClientPorts = new HashMap<>();
 
     //saves the port that receives and sends to a client
     private final HashMap<String, String> rtpClientServer = new HashMap<>();
@@ -146,11 +146,13 @@ public class Proxy implements SipListener {
     //start the rtp port connection process and print explanations
     private int managePortsAfterInviteOK(ServerTransaction st, Response response) {
         int rtpPort1 = Utils.extractPortFromSdp(st.getRequest().getContent());
+        rtpClientPorts.putIfAbsent(rtpPort1, true);
         String ip1 = Utils.getSenderIPfromMessage(st.getRequest());
-        DatagramSocket datagramSocket = Utils.getRandomPort();
+        DatagramSocket datagramSocket = Utils.getRandomPort(rtpClientPorts);
         socketsMap.put(datagramSocket.getLocalPort(), datagramSocket);
         int portServer1 = datagramSocket.getLocalPort();
         int rtpPort2 = Utils.extractPortFromSdp(response.getContent());
+        rtpClientPorts.putIfAbsent(rtpPort2, true);
         String ip2 = Utils.getSenderIPfromMessage(response);
         int portServer2 = Integer.parseInt(waitingMap.get(myIP + ":" + rtpPort1).split(":")[1]);
         waitingMap.remove(myIP + ":" + rtpPort1);
@@ -306,7 +308,7 @@ public class Proxy implements SipListener {
     //create the client transaction for the call, returns it and sends the request
     private ClientTransaction call(Request request) {
         try {
-            DatagramSocket datagramSocket = Utils.getRandomPort();
+            DatagramSocket datagramSocket = Utils.getRandomPort(rtpClientPorts);
             socketsMap.put(datagramSocket.getLocalPort(), datagramSocket);
             String receiveFromClient2Address = myIP + ":" + datagramSocket.getLocalPort();
             //remember the port that receives data from client2

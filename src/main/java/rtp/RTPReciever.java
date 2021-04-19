@@ -36,6 +36,7 @@ public class RTPReciever {
     }
 
     public void close() {
+        socket.disconnect();
         socket.close();
         System.out.println("Receiver port: " + port);
         Utils.printCurrentTime(port, "close", "receiver");
