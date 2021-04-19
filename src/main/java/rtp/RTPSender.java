@@ -30,26 +30,32 @@ public class RTPSender {
         this.port = port;
     }
 
-    public void send(byte[] audio, int audioLength){
-        //Builds an rtp.RTPpacket object containing the frame
-        RTPpacket rtpPacket = new RTPpacket(0, seqNumber, (int) System.currentTimeMillis(), audio, audioLength);
-
-        //get to total length of the full rtp packet to send
-        int packetLength = rtpPacket.getlength();
-
-        //retrieve the packet bitstream and store it in an array of bytes
-        byte[] packetBits = new byte[packetLength];
-        rtpPacket.getpacket(packetBits);
-
-        //send the packet as a DatagramPacket over the UDP socket
+    public void send(byte[] data, int audioLength, boolean isAudio){
+        DatagramPacket datagramPacket;
         try {
-            socket.send(new DatagramPacket(packetBits, packetLength, InetAddress.getByName(serverIP), port));
+            if(isAudio) {
+            //Builds an rtp.RTPpacket object containing the frame
+            RTPpacket rtpPacket = new RTPpacket(0, seqNumber, (int) System.currentTimeMillis(), data, audioLength);
+
+            //get to total length of the full rtp packet to send
+            int packetLength = rtpPacket.getlength();
+
+            //retrieve the packet bitstream and store it in an array of bytes
+            byte[] packetBits = new byte[packetLength];
+            rtpPacket.getpacket(packetBits);
+
+            datagramPacket = new DatagramPacket(packetBits, packetLength, InetAddress.getByName(serverIP), port);
+        } else {
+            datagramPacket = new DatagramPacket(data, audioLength, InetAddress.getByName(serverIP), port);
+        }
+        //send the packet as a DatagramPacket over the UDP socket
+            socket.send(datagramPacket);
         } catch (IOException e) {
             System.out.println(e.getMessage() + " on sender port: " + port);
             e.printStackTrace();
         }
 
-        System.out.println("Send frame #" + seqNumber + ", Frame size: " + audioLength + " (" + audio.length + ")");
+        System.out.println("Send frame #" + seqNumber + ", Frame size: " + audioLength + " (" + data.length + ")");
 //        //print the header bitstream
 //        rtpPacket.printheader();
 
@@ -59,6 +65,7 @@ public class RTPSender {
     public void close(){
         System.out.println("Sender port: " + port);
         Utils.printCurrentTime(port, "closed", "sender");
+        socket.disconnect();
         socket.close();
     }
 }

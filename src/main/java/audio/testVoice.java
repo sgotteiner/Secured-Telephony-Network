@@ -1,7 +1,9 @@
-package rtp;
+package audio;
 
 import audio.AudioCalculator;
 import audio.AudioStream;
+import rtp.RTPReciever;
+import rtp.RTPSender;
 
 import javax.sound.sampled.*;
 import javax.swing.Timer;
@@ -67,7 +69,7 @@ public class testVoice {
                 } catch (Exception ex) {
                     ex.printStackTrace();
                 }
-                rtpSender.send(buf, audioLength);
+                rtpSender.send(buf, audioLength, true);
             }
         });
 
@@ -104,7 +106,7 @@ public class testVoice {
         while (flag) {
             sendTimer.start();
 
-//            receiveTimer.start();
+            receiveTimer.start();
         }
 
         receiveTimer.stop();

@@ -5,7 +5,9 @@ import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.DataLine;
 import javax.sound.sampled.TargetDataLine;
 import java.applet.AudioClip;
+import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -20,6 +22,7 @@ public class AudioStream {
     //-----------------------------------
     public AudioStream() throws Exception {
 
+        // the bigger the sampleSizeInBits the more accurate the recording is and the more memory it captures
         format = new AudioFormat(8000, 16, 1, true, true);
 
         microphone = AudioSystem.getTargetDataLine(format);

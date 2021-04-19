@@ -21,13 +21,13 @@ public class RTPHandler {
         this.isServer = isServer;
 
         if (isServer) {
-            byte[] buf = new byte[1024];
+            byte[] buf = new byte[1036];
             DatagramPacket datagramPacket = new DatagramPacket(buf, buf.length);
             timer = new Timer(100, new ActionListener() {
                 @Override
                 public void actionPerformed(ActionEvent e) {
                     receiver.receive(datagramPacket);
-                    sender.send(buf, buf.length);
+                    sender.send(buf, buf.length, false);
                 }
             });
             timer.start();

@@ -28,6 +28,8 @@ public class AudioCalculator {
     public double getPrinstonFrequency() {
         Complex[] afterFFT = fft(generateComplex(bytes, audioLength));
         double sum = 0;
+        // the length of the complex numbers array is audioLength/2 because every sample is 16 bit = 2 bytes
+        // to calculate the sound average frequency only half of the samples are important = audioLength/4 samples (nyquist)
         for (int i = 0; i < audioLength / 4; i++) {
             //amplitude = height of wave = size of vector = magnitude
             sum += afterFFT[i].magnitude();
@@ -39,8 +41,10 @@ public class AudioCalculator {
 
     private Complex[] generateComplex(byte[] bytes, int length) {
 
+        // each sample is 16 bit = 2 bytes so there are half the size of the byte array
         Complex[] complexArr = new Complex[length / 2];
         for (int i = 0; i < length / 2; i++) {
+            // each sample start at an even place and is size short = 2 bytes
             complexArr[i] = new Complex((short) bytes[2 * i], 0);
         }
         return complexArr;
