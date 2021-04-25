@@ -16,11 +16,12 @@ public class AudioCalculator {
 
     public double getDecibel() {
         float sum = 0;
-        for (int i = 0; i < audioLength; i++) {
-            float sample = bytes[i];
-            sum += sample * sample;
+        for (int i = 0; i < audioLength / 2; i++) {
+            short sample = bytes[2 * i];
+            sample = (short) ((short) (sample << 8) + bytes[2 * i + 1]);
+            sum += (float) sample * sample;
         }
-        double rms = Math.sqrt(sum / audioLength);
+        double rms = Math.sqrt(sum / (audioLength / 2));
         decibel = 20 * Math.log10(rms);
         return decibel;
     }

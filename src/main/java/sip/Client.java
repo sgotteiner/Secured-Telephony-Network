@@ -149,10 +149,10 @@ public class Client implements SipListener {
             //client2 starts sending for now. When client1 gets the OK he will start sending and receiving.
             //In the ACK client2 will start Receiving
             int sendPort = Utils.extractPortFromSdp(request.getContent());
-            if(datagramSocket.isClosed()){
+            if (datagramSocket.isClosed()) {
                 datagramSocket = new DatagramSocket(rtpPort);
             }
-            rtpHandler = new RTPHandler(server.split(":")[0], sendPort, datagramSocket, false);
+            rtpHandler = new RTPHandler(server.split(":")[0], sendPort, datagramSocket, false, null);
             iConnectSipToGUI.printMessage("Sending to " + server.split(":")[0] +
                     ":" + sendPort + " to server and receiving at " + clientDetails.getMyIP() + ":" + rtpPort);
             rtpSenderTimer = new javax.swing.Timer(100, notSenderActionListener);
@@ -302,14 +302,14 @@ public class Client implements SipListener {
     private void openRTPWhenCall(int port) {
         //client2 has started sending so the receiver can be opened without getting receiveTimeout exception
         //after ack cient2 will start receiving
-        if(datagramSocket.isClosed()){
+        if (datagramSocket.isClosed()) {
             try {
                 datagramSocket = new DatagramSocket(rtpPort);
             } catch (SocketException e) {
                 e.printStackTrace();
             }
         }
-        rtpHandler = new RTPHandler(server.split(":")[0], port, datagramSocket, false);
+        rtpHandler = new RTPHandler(server.split(":")[0], port, datagramSocket, false, null);
         System.out.println("sending to server on " + port + " and receiving from server on " + rtpPort);
         iConnectSipToGUI.printMessage("Sending to " + server.split(":")[0] + ":" +
                 port + " to server and receiving at " + clientDetails.getMyIP() + ":" + rtpPort);
@@ -355,6 +355,10 @@ public class Client implements SipListener {
 
             rtpHandler.getReceiver().receive(datagramPacket);
 
+            if (datagramPacket.getLength() == 1) {
+                System.out.println("quiet");
+                return;
+            }
             //create an rtp.RTPpacket object from the DP
             RTPpacket rtpPacket = new RTPpacket(datagramPacket.getData(), datagramPacket.getLength());
             int seqNumber = rtpPacket.getsequencenumber();
@@ -376,15 +380,6 @@ public class Client implements SipListener {
             speaker.write(payload, 0, payloadLength);
         }
     };
-
-    private int numBits1(byte b) {
-        int counter = 0;
-        while (b != 0) {
-            b = (byte) (b & (b - 1));
-            counter++;
-        }
-        return counter;
-    }
 
     private ActionListener notReceiverActionListener = new ActionListener() {
         @Override
@@ -442,8 +437,10 @@ public class Client implements SipListener {
     public void init(String myIP, int mySipPort, String serverAddress, IConnectSipToGUI iConnectSipToGUI) {
         this.myIP = myIP;
         this.mySipPort = mySipPort;
-        this.datagramSocket = Utils.getRandomPort(null);
-        this.rtpPort = datagramSocket.getLocalPort();
+        if (datagramSocket == null) {
+            this.datagramSocket = Utils.getRandomPort(null);
+            this.rtpPort = datagramSocket.getLocalPort();
+        }
         this.iConnectSipToGUI = iConnectSipToGUI;
 
         initFactories();

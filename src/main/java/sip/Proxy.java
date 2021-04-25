@@ -20,9 +20,10 @@ import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class Proxy implements SipListener {
+public class Proxy implements SipListener, RTPHandler.IProxyToRTPCallBack {
 
     private static SipFactory sipFactory;
     private static AddressFactory addressFactory;
@@ -48,7 +49,7 @@ public class Proxy implements SipListener {
     //saves user display name as a key to the user's contact uri
     private final HashMap<String, SipURI> registrar = new HashMap<String, SipURI>();
     //necessary only because the whole network is on my local machine and I need to save the client ports
-    private HashMap<Integer, Boolean> rtpClientPorts = new HashMap<>();
+    private HashMap<Integer, SipURI> rtpClientPorts = new HashMap<Integer, SipURI>();
 
     //saves the port that receives and sends to a client
     private final HashMap<String, String> rtpClientServer = new HashMap<>();
@@ -146,13 +147,15 @@ public class Proxy implements SipListener {
     //start the rtp port connection process and print explanations
     private int managePortsAfterInviteOK(ServerTransaction st, Response response) {
         int rtpPort1 = Utils.extractPortFromSdp(st.getRequest().getContent());
-        rtpClientPorts.putIfAbsent(rtpPort1, true);
+        SipURI client1URI = (SipURI) ((ContactHeader) st.getRequest().getHeader(ContactHeader.NAME)).getAddress().getURI();
+        rtpClientPorts.putIfAbsent(rtpPort1, client1URI);
         String ip1 = Utils.getSenderIPfromMessage(st.getRequest());
         DatagramSocket datagramSocket = Utils.getRandomPort(rtpClientPorts);
         socketsMap.put(datagramSocket.getLocalPort(), datagramSocket);
         int portServer1 = datagramSocket.getLocalPort();
         int rtpPort2 = Utils.extractPortFromSdp(response.getContent());
-        rtpClientPorts.putIfAbsent(rtpPort2, true);
+        SipURI client2URI = (SipURI) ((ContactHeader) response.getHeader(ContactHeader.NAME)).getAddress().getURI();
+        rtpClientPorts.putIfAbsent(rtpPort2, client2URI);
         String ip2 = Utils.getSenderIPfromMessage(response);
         int portServer2 = Integer.parseInt(waitingMap.get(myIP + ":" + rtpPort1).split(":")[1]);
         waitingMap.remove(myIP + ":" + rtpPort1);
@@ -161,7 +164,7 @@ public class Proxy implements SipListener {
         waitingMap.put(ip1 + ":" + rtpPort2, myIP + ":" + portServer1); //rtpPort will be got in ack and then an rtp handler will be created
         rtpClientServer.put(ip1 + ":" + rtpPort1, myIP + ":" + portServer1); //the rtp handler will be created after client1 ack
         //start receive from client2 and send to client1
-        rtpHandlers.put(ip1 + ":" + rtpPort1, new RTPHandler(myIP, rtpPort1, socketsMap.get(portServer2), true));
+        rtpHandlers.put(ip1 + ":" + rtpPort1, new RTPHandler(myIP, rtpPort1, socketsMap.get(portServer2), true, this));
         socketsMap.remove(portServer2);
 
         System.out.println("client1 sends rtp to server to " + portServer1 + " and the server sends to " + rtpPort1 + " in client1, the handler will be created in ack");
@@ -200,7 +203,7 @@ public class Proxy implements SipListener {
         int serverPort2 = Integer.parseInt(waitingMap.get(address2).split(":")[1]);
         //receive from client1 and send to client2
         rtpHandlers.put(address2, new RTPHandler(myIP,
-                rtpPort2, socketsMap.get(serverPort2), true));
+                rtpPort2, socketsMap.get(serverPort2), true, this));
         waitingMap.remove(myIP + ":" + rtpPort2);
 
         System.out.println("handler receives at " + serverPort2 + " from client1 and sends to " + rtpPort2 + " at client2");
@@ -274,7 +277,7 @@ public class Proxy implements SipListener {
             } catch (SipException | InvalidArgumentException | ParseException e) {
                 e.printStackTrace();
             }
-            String name = (fromUri == null ? from.getAddress().getDisplayName() : "") + (toUri == null ? " - " + ((To)to).getDisplayName() : "");
+            String name = (fromUri == null ? from.getAddress().getDisplayName() : "") + (toUri == null ? " - " + ((To) to).getDisplayName() : "");
             System.out.println("User is not registered.");
             iMessageInGUI.printMessage(name + " not registered.");
             throw new RuntimeException("User is not registered");
@@ -501,14 +504,12 @@ public class Proxy implements SipListener {
     }
 
     public void stop() {
-        //if there are no calls
-        if (rtpClientServer.size() == 0)
-            registrar.clear();
-        Object[] keys = registrar.keySet().toArray();
-        for (int i = 0; i < keys.length; i++) {
-            sendByeToClient(registrar.get(keys[i]));
+        Object[] values = registrar.values().toArray();
+        for (int i = 0; i < values.length; i++) {
+            sendByeToClient((SipURI) values[i]);
         }
         isRunning = false;
+        registrar.clear();
     }
 
     private void sendByeToClient(SipURI contactURI) {
@@ -551,9 +552,10 @@ public class Proxy implements SipListener {
 
             // Create the contact name address.
             SipURI serverURI = addressFactory.createSipURI("Server", listeningPoint.getIPAddress());
-            contactURI.setPort(listeningPoint.getPort());
+            SipURI contact = (SipURI) contactURI.clone();
+            contact.setPort(listeningPoint.getPort());
 
-            Address contactAddress = addressFactory.createAddress(contactURI);
+            Address contactAddress = addressFactory.createAddress(contact);
 
             // Add the contact address.
             contactAddress.setDisplayName("Server");
@@ -566,6 +568,20 @@ public class Proxy implements SipListener {
             clientTransaction.sendRequest();
         } catch (Exception e) {
             printException(e);
+        }
+    }
+
+    @Override
+    public void stopCall(String sendAddress) {
+        //send unregister to the sender of the low frequency or volume messages
+        SipURI starterURI = rtpClientPorts.get(Integer.parseInt(sendAddress.split(":")[1]));
+        sendByeToClient(starterURI);
+        for (String key : registrar.keySet()) {
+            if (registrar.get(key).equals(starterURI)) {
+                registrar.remove(key);
+                iMessageInGUI.printMessage("Unregistering: " + key);
+                return;
+            }
         }
     }
 
