@@ -17,10 +17,12 @@ import java.util.logging.Handler;
 public class testVoice {
 
     private static AudioStream audio = null;
-    private static byte[] buf;
+    private static byte[] buf, emptyArray;
     private static DatagramPacket datagramPacket;
     private static SourceDataLine speaker;
     private static boolean flag = true;
+    private static int badFrequencyCounter = 0, badVolumeCounter = 0;
+    private static boolean isSend = true;
 
     public static void main(String[] args) {
 
@@ -34,6 +36,7 @@ public class testVoice {
         RTPReciever rtpReciever = new RTPReciever(datagramSocket);
 
         buf = new byte[1024];
+        emptyArray = new byte[1];
         datagramPacket = new DatagramPacket(buf, buf.length);
 
         try {
@@ -66,10 +69,26 @@ public class testVoice {
                     double decibel = audioCalculator.getDecibel();
                     double frequency = audioCalculator.getPrinstonFrequency();
                     System.out.println("Frequency: " + frequency + ", Decibel: " + decibel);
+                    //check if the audio can be heard
+                    if (frequency < 100 || frequency > 20000) {
+                        badFrequencyCounter++;
+                        isSend = false;
+                    } else {
+                        badFrequencyCounter = 0;
+                    }
+                    if (decibel < 30) {
+                        badVolumeCounter++;
+                        isSend = false;
+                    } else {
+                        badVolumeCounter = 0;
+                    }
                 } catch (Exception ex) {
                     ex.printStackTrace();
                 }
-                rtpSender.send(buf, audioLength, true);
+                if (isSend)
+                    rtpSender.send(buf, audioLength, true);
+                else rtpSender.send(new byte[1], 1, false);
+                isSend = true;
             }
         });
 
@@ -77,6 +96,12 @@ public class testVoice {
             @Override
             public void actionPerformed(ActionEvent e) {
                 rtpReciever.receive(datagramPacket);
+
+                //quiet audio
+                if (datagramPacket.getLength() == 1){
+                    System.out.println("quiet");
+                    return;
+                }
 
                 //create an rtp.RTPpacket object from the DP
                 rtp.RTPpacket rtpPacket = new rtp.RTPpacket(datagramPacket.getData(), datagramPacket.getLength());
@@ -98,16 +123,17 @@ public class testVoice {
 
                 speaker.write(payload, 0, payloadLength);
 
-                if (seqNumber == 50)
+                if (seqNumber == 150)
                     flag = false;
             }
         });
 
-        while (flag) {
+        while (flag && badFrequencyCounter < 51 && badVolumeCounter < 51) {
             sendTimer.start();
 
-            receiveTimer.start();
+//            receiveTimer.start();
         }
+        System.out.println("bad frequency: " + badFrequencyCounter + " bad volume: " + badVolumeCounter);
 
         receiveTimer.stop();
         rtpReciever.close();

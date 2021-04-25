@@ -1,5 +1,6 @@
 package utils;
 
+import javax.sip.address.SipURI;
 import javax.sip.header.ContactHeader;
 import javax.sip.header.ContentTypeHeader;
 import javax.sip.header.HeaderFactory;
@@ -14,7 +15,7 @@ import java.util.Random;
 
 public class Utils {
 
-    public static DatagramSocket getRandomPort(HashMap<Integer, Boolean> rtpClientPorts) {
+    public static DatagramSocket getRandomPort(HashMap<Integer, SipURI> rtpClientPorts) {
         Random r = new Random();
         DatagramSocket datagramSocket = null;
         while (true) {
