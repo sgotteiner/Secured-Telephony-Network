@@ -113,6 +113,7 @@ public class Client implements SipListener {
             //a register request with expires = 0 is unregister request (in this case from the server)
             if (((ContactHeader) request.getHeader(ContactHeader.NAME)).getExpires() == 0 && isInConversation && isSender) {
                 //only the caller sends the bye
+                iConnectSipToGUI.handleRegistration(false);
                 sendBye();
             }
         }
@@ -257,6 +258,7 @@ public class Client implements SipListener {
                     sendACK(response, clientTransaction);
                     break;
                 case Request.REGISTER:
+                    iConnectSipToGUI.handleRegistration(true);
                     System.out.println("Register successful");
                     break;
                 case Request.BYE:
@@ -353,10 +355,12 @@ public class Client implements SipListener {
         @Override
         public void actionPerformed(ActionEvent e) {
 
+            speaker.flush();
+
             rtpHandler.getReceiver().receive(datagramPacket);
 
             if (datagramPacket.getLength() == 1) {
-                System.out.println("quiet");
+                System.out.println(datagramPacket.getData()[0] + ": quiet");
                 return;
             }
             //create an rtp.RTPpacket object from the DP
