@@ -573,8 +573,15 @@ public class Proxy implements SipListener, RTPHandler.IProxyToRTPCallBack {
 
     @Override
     public void stopCall(String sendAddress) {
+        String byeAdress = "";
+        for(String key : rtpClients.keySet()){
+            if(rtpClients.get(key).equals(sendAddress)){
+                byeAdress = key;
+                break;
+            }
+        }
         //send unregister to the sender of the low frequency or volume messages
-        SipURI starterURI = rtpClientPorts.get(Integer.parseInt(sendAddress.split(":")[1]));
+        SipURI starterURI = rtpClientPorts.get(Integer.parseInt(byeAdress.split(":")[1]));
         sendByeToClient(starterURI);
         for (String key : registrar.keySet()) {
             if (registrar.get(key).equals(starterURI)) {

@@ -1,5 +1,6 @@
 package gui;
 
+import gov.nist.javax.sip.header.Contact;
 import sip.Client;
 
 import javax.sip.RequestEvent;
@@ -12,6 +13,7 @@ import java.awt.event.ActionListener;
 public class Softphone1 {
 
     private JPanel panel;
+    private static JFrame frame;
     private JTextField txtCallByName;
     private JButton btnCallHangupAnswer;
     private boolean isInCall = false, isAnswer = false;
@@ -59,6 +61,14 @@ public class Softphone1 {
             }
 
             @Override
+            public void handleRegistration(boolean isRegistered) {
+                Softphone1.this.isRegistered = isRegistered;
+                if (isRegistered)
+                    frame.getContentPane().setBackground(Color.green);
+                else frame.getContentPane().setBackground(Color.red);
+            }
+
+            @Override
             public void printMessage(String message) {
                 terminal.append(message + "\n");
             }
@@ -67,7 +77,6 @@ public class Softphone1 {
         btnRegister.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                isRegistered = true;
                 client.register(txtUsername.getText(), txtDisplayName.getText(), txtDomainName.getText(),
                         txtMyIP.getText(), Integer.parseInt(txtMyPort.getText()),
                         txtServerIP.getText() + ":" + txtServerPort.getText(), iConnectSipToGUI);
@@ -76,8 +85,10 @@ public class Softphone1 {
         btnCallHangupAnswer.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                if (!isRegistered)
+                if (!isRegistered){
+                    terminal.append("Must register to call" + "\n");
                     return;
+                }
 
                 isInCall = !isInCall;
 
@@ -102,10 +113,11 @@ public class Softphone1 {
 
     public static void main(String[] args) {
 
-        JFrame frame = new JFrame("Softphone 1");
+        frame = new JFrame("Softphone 1");
         frame.setContentPane(new Softphone1(new Client()).getPanel());
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.pack();
+        frame.getContentPane().setBackground(Color.red);
         frame.setVisible(true);
     }
 }
