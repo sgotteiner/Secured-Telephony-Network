@@ -95,9 +95,6 @@ public class testVoice {
         Timer receiveTimer = new Timer(100, new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-
-                speaker.flush();
-
                 rtpReciever.receive(datagramPacket);
 
                 //quiet audio
@@ -134,7 +131,7 @@ public class testVoice {
         while (flag && badFrequencyCounter < 51 && badVolumeCounter < 51) {
             sendTimer.start();
 
-            receiveTimer.start();
+//            receiveTimer.start();
         }
         System.out.println("bad frequency: " + badFrequencyCounter + " bad volume: " + badVolumeCounter);
 

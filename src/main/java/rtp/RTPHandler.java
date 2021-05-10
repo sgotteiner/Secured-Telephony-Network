@@ -59,10 +59,7 @@ public class RTPHandler {
                     }
                     if(isSend[0])
                         sender.send(buf, buf.length, false);
-                    else {
-                        emptyArray[0] = (byte) rtpPacket.getsequencenumber();
-                        sender.send(emptyArray, 1, false);
-                    }
+                    else sender.send(emptyArray, 1, false);
                     isSend[0] = true;
                     //stop the call if this is a silent call
                     if(badFrequencyCounter[0] == 51 || badVolumeCounter[0] == 51)

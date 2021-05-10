@@ -12,7 +12,6 @@ import java.awt.event.ActionListener;
 public class Softphone2 {
 
     private JPanel panel;
-    private static JFrame frame;
     private JTextField txtCallByName;
     private JButton btnCallHangupAnswer;
     private boolean isInCall = false, isAnswer = false;
@@ -60,14 +59,6 @@ public class Softphone2 {
             }
 
             @Override
-            public void handleRegistration(boolean isRegistered) {
-                Softphone2.this.isRegistered = isRegistered;
-                if (isRegistered)
-                    frame.getContentPane().setBackground(Color.green);
-                else frame.getContentPane().setBackground(Color.red);
-            }
-
-            @Override
             public void printMessage(String message) {
                 terminal.append(message + "\n");
             }
@@ -76,6 +67,7 @@ public class Softphone2 {
         btnRegister.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
+                isRegistered = true;
                 client.register(txtUsername.getText(), txtDisplayName.getText(), txtDomainName.getText(),
                         txtMyIP.getText(), Integer.parseInt(txtMyPort.getText()),
                         txtServerIP.getText() + ":" + txtServerPort.getText(), iConnectSipToGUI);
@@ -109,11 +101,10 @@ public class Softphone2 {
 
     public static void main(String[] args) {
 
-        frame = new JFrame("Softphone 2");
+        JFrame frame = new JFrame("Softphone 2");
         frame.setContentPane(new Softphone2(new Client()).getPanel());
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.pack();
-        frame.getContentPane().setBackground(Color.red);
         frame.setVisible(true);
     }
 }
