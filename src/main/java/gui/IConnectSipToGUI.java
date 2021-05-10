@@ -8,6 +8,4 @@ public interface IConnectSipToGUI extends IMessageInGUI {
     public void handleCallInvitation(RequestEvent requestEvent, ServerTransaction serverTransaction);
 
     public void handleBye();
-
-    public void handleRegistration(boolean isRegistered);
 }
