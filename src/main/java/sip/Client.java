@@ -1,5 +1,6 @@
 package sip;
 
+import audio.AESencryption;
 import audio.AudioStream;
 import gui.IConnectSipToGUI;
 import rtp.RTPHandler;
@@ -55,12 +56,15 @@ public class Client implements SipListener {
     private ClientDetails clientDetails;
     private String server = "127.0.0.1:5080";
 
+    public static final int FRAME_SIZE = 1024;
     private DatagramSocket datagramSocket;
     private int rtpPort;
     private RTPHandler rtpHandler;
     private static AudioStream audio = null;
-    private static byte[] buf = new byte[1036];
-    private DatagramPacket datagramPacket = new DatagramPacket(buf, buf.length);
+    private static byte[] buf = new byte[FRAME_SIZE];
+    private int size = FRAME_SIZE + AESencryption.ADDITION_SIZE +
+            RTPpacket.HEADER_SIZE;
+    private DatagramPacket datagramPacket = new DatagramPacket(new byte[size], size);
     private static SourceDataLine speaker;
     private javax.swing.Timer rtpSenderTimer, rtpReceiverTimer;
 
@@ -335,11 +339,18 @@ public class Client implements SipListener {
             //get next frame to send from the video, as well as its size
             int audioLength = 0;
             try {
-                audioLength = audio.getnextframe(buf);
+                audioLength = audio.getNextFrame(buf);
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
-            rtpHandler.getSender().send(buf, audioLength, true);
+            byte[] encArr;
+            try {
+                encArr = AESencryption.encrypt(buf);
+                System.out.println("payload: " + encArr.length + " payload[0]: " + encArr[0]);
+                rtpHandler.getSender().send(encArr, encArr.length, true);
+            } catch (Exception exception) {
+                exception.printStackTrace();
+            }
         }
     };
 
@@ -347,7 +358,14 @@ public class Client implements SipListener {
         @Override
         public void actionPerformed(ActionEvent e) {
             //send nothing just to see that this is working
-            rtpHandler.getSender().send(buf, buf.length, true);
+            byte[] encArr;
+            try {
+                encArr = AESencryption.encrypt(buf);
+                System.out.println("payload: " + encArr.length + " payload[0]: " + encArr[0]);
+                rtpHandler.getSender().send(encArr, encArr.length, true);
+            } catch (Exception exception) {
+                exception.printStackTrace();
+            }
         }
     };
 
@@ -381,7 +399,15 @@ public class Client implements SipListener {
             byte[] payload = new byte[payloadLength];
             rtpPacket.getpayload(payload);
 
-            speaker.write(payload, 0, payloadLength);
+            System.out.println("got payload: " + payload.length + " payload[0]: " + payload[0]);
+
+            byte[] decArr;
+            try {
+                decArr = AESencryption.decrypt(payload);
+                speaker.write(decArr, 0, decArr.length);
+            } catch (Exception exception) {
+                exception.printStackTrace();
+            }
         }
     };
 

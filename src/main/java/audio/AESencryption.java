@@ -1,3 +1,5 @@
+package audio;
+
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 import java.security.Key;
@@ -8,6 +10,8 @@ public class AESencryption {
     private static final byte[] keyValue =
             new byte[]{'T', 'h', 'e', 'B', 'e', 's', 't',
                     'S', 'e', 'c', 'r', 'e', 't', 'K', 'e', 'y'};
+
+    public static final int ADDITION_SIZE = 16;
 
     public static byte[] encrypt(byte[] Data) throws Exception {
         Key key = generateKey();

@@ -36,7 +36,7 @@ public class AudioStream {
     // getnextframe
     //returns the next frame as an array of byte and the size of the frame
     //-----------------------------------
-    public int getnextframe(byte[] frame) throws Exception {
+    public int getNextFrame(byte[] frame) throws Exception {
         return microphone.read(frame, 0, frame.length);
     }
 

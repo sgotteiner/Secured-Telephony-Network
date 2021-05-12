@@ -5,7 +5,7 @@ import java.util.*;
 public class RTPpacket{
 
     //size of the RTP header:
-    static int HEADER_SIZE = 12;
+    public static final int HEADER_SIZE = 12;
 
     //Fields that compose the RTP header
     public int Version;

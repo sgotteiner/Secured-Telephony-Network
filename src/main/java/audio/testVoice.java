@@ -1,9 +1,9 @@
 package audio;
 
-import audio.AudioCalculator;
-import audio.AudioStream;
 import rtp.RTPReciever;
 import rtp.RTPSender;
+import rtp.RTPpacket;
+import sip.Client;
 
 import javax.sound.sampled.*;
 import javax.swing.Timer;
@@ -12,18 +12,16 @@ import java.awt.event.ActionListener;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.SocketException;
-import java.nio.charset.StandardCharsets;
-import java.util.logging.Handler;
 
 public class testVoice {
 
     private static AudioStream audio = null;
-    private static byte[] buf, emptyArray;
+    private static byte[] buf, emptyArray, encArr, decArr;
     private static DatagramPacket datagramPacket;
     private static SourceDataLine speaker;
     private static boolean flag = true;
     private static int badFrequencyCounter = 0, badVolumeCounter = 0;
-    private static boolean isSend = true;
+    private static boolean isSend = true, isCalculateFrequencyAndVolume = false, isEncryption = false;
 
     public static void main(String[] args) {
 
@@ -36,9 +34,13 @@ public class testVoice {
         }
         RTPReciever rtpReciever = new RTPReciever(datagramSocket);
 
-        buf = new byte[1024];
+        buf = new byte[Client.FRAME_SIZE];
         emptyArray = new byte[1];
-        datagramPacket = new DatagramPacket(buf, buf.length);
+        encArr = null;
+        decArr = null;
+        int size = Client.FRAME_SIZE + RTPpacket.HEADER_SIZE;
+        size += isEncryption ? AESencryption.ADDITION_SIZE : 0;
+        datagramPacket = new DatagramPacket(new byte[size], size);
 
         try {
             audio = new AudioStream();
@@ -65,30 +67,42 @@ public class testVoice {
                 //get next frame to send from the video, as well as its size
                 int audioLength = 0;
                 try {
-                    audioLength = audio.getnextframe(buf);
-                    audioCalculator.setBytes(buf, audioLength);
-                    double decibel = audioCalculator.getDecibel();
-                    double frequency = audioCalculator.getPrinstonFrequency();
-                    System.out.println("Frequency: " + frequency + ", Decibel: " + decibel);
-                    //check if the audio can be heard
-                    if (frequency < 100 || frequency > 20000) {
-                        badFrequencyCounter++;
-                        isSend = false;
-                    } else {
-                        badFrequencyCounter = 0;
-                    }
-                    if (decibel < 30) {
-                        badVolumeCounter++;
-                        isSend = false;
-                    } else {
-                        badVolumeCounter = 0;
+                    audioLength = audio.getNextFrame(buf);
+                    if(isCalculateFrequencyAndVolume) {
+                        audioCalculator.setBytes(buf, audioLength);
+                        double decibel = audioCalculator.getDecibel();
+                        double frequency = audioCalculator.getPrinstonFrequency();
+                        System.out.println("Frequency: " + frequency + ", Decibel: " + decibel);
+                        //check if the audio can be heard
+                        if (frequency < 100 || frequency > 20000) {
+                            badFrequencyCounter++;
+                            isSend = false;
+                        } else {
+                            badFrequencyCounter = 0;
+                        }
+                        if (decibel < 30) {
+                            badVolumeCounter++;
+                            isSend = false;
+                        } else {
+                            badVolumeCounter = 0;
+                        }
                     }
                 } catch (Exception ex) {
                     ex.printStackTrace();
                 }
-                if (isSend)
-                    rtpSender.send(buf, audioLength, true);
-                else rtpSender.send(new byte[1], 1, false);
+                if (isSend){
+                    if(isEncryption) {
+                        try {
+                            encArr = AESencryption.encrypt(buf);
+                            rtpSender.send(encArr, encArr.length, true);
+                        } catch (Exception exception) {
+                            exception.printStackTrace();
+                        }
+                    } else {
+                        rtpSender.send(buf, buf.length, true);
+                    }
+                }
+                else rtpSender.send(emptyArray, 1, false);
                 isSend = true;
             }
         });
@@ -125,7 +139,16 @@ public class testVoice {
                 byte[] payload = new byte[payloadLength];
                 rtpPacket.getpayload(payload);
 
-                speaker.write(payload, 0, payloadLength);
+                if(isEncryption) {
+                    try {
+                        decArr = AESencryption.decrypt(payload);
+                        speaker.write(decArr, 0, decArr.length);
+                    } catch (Exception exception) {
+                        exception.printStackTrace();
+                    }
+                } else {
+                    speaker.write(payload, 0, payloadLength);
+                }
 
                 if (seqNumber == 150)
                     flag = false;
@@ -144,6 +167,5 @@ public class testVoice {
         sendTimer.stop();
         rtpSender.close();
         audio.closeMic();
-//        System.exit(0);
     }
 }

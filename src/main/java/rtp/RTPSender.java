@@ -55,7 +55,7 @@ public class RTPSender {
             e.printStackTrace();
         }
 
-        System.out.println("Send frame #" + seqNumber + ", Frame size: " + audioLength + " (" + data.length + ")");
+        System.out.println("Send frame #" + seqNumber + ", Frame size: " + audioLength);
 //        //print the header bitstream
 //        rtpPacket.printheader();
 
